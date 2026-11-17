@@ -124,6 +124,27 @@ def test_extended_exact_r_preprocessing_early_native_trajectory(case):
         solver = getattr(_core, "surv_" + item["method"] + "_solver")
     fit = solver(**item["prepared"], **item["controls"], maxitr=step, verbose=0, ncore=1)
     expected = item["trajectory"][str(step)]
+    if case == "reg_sir_2_default":
+        # Captured by pytest and shown only on failure, to distinguish a
+        # rounding-sensitive finite-difference path from objective drift.
+        prepared = item["prepared"]
+        def objective(B):
+            return _core.sir_init(B, prepared["X"], prepared["Y"], prepared["bw"], 1)
+        initial_fn = objective(prepared["B"])
+        gradient = np.empty_like(prepared["B"])
+        for index in np.ndindex(gradient.shape):
+            perturbed = prepared["B"].copy()
+            perturbed[index] += item["controls"]["epsilon"]
+            gradient[index] = (objective(perturbed) - initial_fn) / item["controls"]["epsilon"]
+        print("SIR trajectory diagnostics:", json.dumps({
+            "armadillo": _core.armadillo_version, "initial_fn": initial_fn,
+            "initial_forward_gradient": gradient.tolist(), "B": fit["B"].tolist(),
+            "fn": fit["fn"], "expected_fn": expected["fn"],
+            "fixed_r_state_fn_error": objective(expected["B"]) - expected["fn"],
+            "returned_state_fn_error": objective(fit["B"]) - fit["fn"],
+            "orthogonality_error": float(np.max(np.abs(fit["B"].T @ fit["B"] - np.eye(2)))),
+            "itr": fit["itr"], "converge": fit["converge"],
+        }))
     _numeric(fit["B"], expected["B"], atol=1e-8, rtol=1e-7)
     _numeric(fit["fn"], expected["fn"], atol=2e-10, rtol=2e-9)
     assert fit["itr"] == expected["itr"]
