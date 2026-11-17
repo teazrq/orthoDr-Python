@@ -44,3 +44,5 @@ jobs:
           python -m pytest "$GITHUB_WORKSPACE/tests" --import-mode=importlib -q
       - name: Run documented examples against the installation
         run: python tools/verify_examples.py --installed
+      - name: Run website examples against the installation
+        run: python tools/verify_docs.py --installed

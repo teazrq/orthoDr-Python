@@ -1,0 +1,74 @@
+site_name: orthoDr for Python
+site_description: >-
+  Dimension reduction for regression, right-censored survival outcomes,
+  and personalized dose learning in Python.
+site_url: https://teazrq.github.io/orthoDr-Python/
+repo_url: https://github.com/teazrq/orthoDr-Python
+repo_name: teazrq/orthoDr-Python
+edit_uri: edit/main/docs/
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: ignore
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.path
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Get Started: tutorials/get-started.md
+      - Regression: tutorials/regression.md
+      - Survival: tutorials/survival.md
+      - Personalized Doses: tutorials/personalized-dose.md
+      - General Optimizer: tutorials/general-optimizer.md
+  - Reference:
+      - API Guide: api.md
+      - Comparing Python and R: reference/r-python.md
+      - Method Papers: references.md
+  - R version: https://teazrq.github.io/orthoDr/

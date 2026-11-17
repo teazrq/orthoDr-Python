@@ -55,4 +55,9 @@ python tools/verify_examples.py
 python tools/verify_examples.py --installed
 ```
 
-The Python source is published on [GitHub](https://github.com/teazrq/orthoDr-Python). No PyPI release or Python documentation site is published.
+The Python source is published on [GitHub](https://github.com/teazrq/orthoDr-Python).
+The [documentation site](https://teazrq.github.io/orthoDr-Python/) contains
+installation instructions, tutorials, and the API guide. Its Python examples
+are checked in fresh processes against the installed package with
+`python tools/verify_docs.py --installed`; the documentation build checks
+internal links and section anchors. No PyPI release has been published.
