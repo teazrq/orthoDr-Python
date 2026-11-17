@@ -1,5 +1,11 @@
 # Python API
 
+Look up array conventions, fitting arguments, returned diagnostics, and
+numerical utilities for the GitHub source version **0.1.0**. For a first
+analysis, start with [installation and regression](tutorials/get-started.md),
+[survival](tutorials/survival.md), or
+[personalized doses](tutorials/personalized-dose.md).
+
 ## Data and fitted objects
 
 Use finite real NumPy-compatible arrays. Predictors have shape `(n, p)`;
@@ -169,7 +175,7 @@ units by `s > 0` requires dividing it by `s**2`. In intercept mode, shifting
 doses and intercept bounds together preserves the objective. These identities
 do not guarantee identical optimizer trajectories with absolute tolerances.
 
-The direct coefficient penalty is `lambda_reward * sum(W**2)`, not an RKHS norm.
+The direct coefficient penalty is `lambda_reward * sum(W**2)`, not a squared RKHS norm.
 Direction updates keep coefficients fixed while kernel centers and projection
 scales change with `B`; this is the R package's joint finite-dimensional
 formulation, which differs from a literal fixed-function direction update.
@@ -200,7 +206,7 @@ constant rewards are rejected because they identify neither directions nor
 a preferred dose. The smoother includes each training observation itself;
 small training error at a narrow bandwidth does not establish accurate decisions.
 
-Its final ridge penalty is `lambda_init * W.T @ K_B @ W`, the RKHS norm
+Its final ridge penalty is `lambda_init * W.T @ K_B @ W`, the squared RKHS norm
 penalty. With `intercept=True`, the rule is $d(x)=\alpha+k_B(x)^\top W$.
 The constant is unpenalized and unbounded. GCV accounts for that constant;
 shifting the doses and grid shifts the fitted rule accordingly. The default
@@ -226,7 +232,7 @@ Only `gradient_tolerance` sets pseudo-direct `converge=True`. Failed searches
 preserve the last accepted state. Stagnation requires small direction and
 objective changes averaged over five accepted updates. Diagnostic scalars remain available with
 `keep_data=False`; recomputing them requires the original training inputs.
-See the runnable [pseudo-direct example](../examples/pseudo_direct.py).
+See the runnable [pseudo-direct example](https://github.com/teazrq/orthoDr-Python/blob/main/examples/pseudo_direct.py).
 
 ## Initializers and general optimization
 
@@ -299,7 +305,9 @@ the data.
 
 ## References
 
-The statistical references and their roles follow the published R package:
+See [references and citation](references.md) for software attribution and the
+method papers. The statistical references and their roles follow the published
+R package:
 
 - Ma and Zhu (2012), semiparametric dimension reduction,
   [JASA](https://doi.org/10.1080/01621459.2011.646925).

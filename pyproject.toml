@@ -24,6 +24,7 @@ test = ["pytest>=7"]
 plot = ["matplotlib>=3.6"]
 
 [project.urls]
+Documentation = "https://teazrq.github.io/orthoDr-Python/"
 Source = "https://github.com/teazrq/orthoDr-Python"
 Issues = "https://github.com/teazrq/orthoDr-Python/issues"
 

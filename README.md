@@ -12,6 +12,9 @@ source's C++ numerical routines and implements preprocessing, initializers,
 and prediction in Python. It is not yet a PyPI release. See
 [validation](VALIDATION.md) for the R comparison and its numerical limits.
 
+See the [Python documentation](https://teazrq.github.io/orthoDr-Python/) for
+installation, task-oriented tutorials, and the API reference.
+
 ## Installation
 
 Use an existing shared Python installation with NumPy, SciPy, setuptools,
@@ -22,10 +25,12 @@ missing Python dependencies in the shared user or machine installation:
 python -m pip install --user "numpy>=1.24" "scipy>=1.10" "setuptools>=77" wheel "pybind11>=3.0"
 ```
 
-From this directory, build the native extension for checkout examples and tests,
+Clone the source, build the native extension for checkout examples and tests,
 then install the package into the shared user installation:
 
 ```bash
+git clone https://github.com/teazrq/orthoDr-Python.git
+cd orthoDr-Python
 python setup.py build_ext --inplace
 python -m pip install --user --no-build-isolation --no-deps .
 ```
