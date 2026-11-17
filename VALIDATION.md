@@ -14,6 +14,8 @@ Grid maxima and GCV minima are discrete choices. Tests compare their scores dire
 
 Analytic gradients reduce the earlier pseudo-direct trajectory discrepancy, but nonconvex spectral updates still amplify rounding. In the preserved two-direction example, exact R-prepared inputs agree through 20 updates within `3.9e-11` in the basis. At 100 unfinished updates, public predictions differ by `4.0e-6`; the normalized constrained residual is about `0.00375` in both languages. R-only perturbations of the initial basis by `1e-14` change predictions by up to `3.3e-5`. These are unfinished trajectories, not convergence evidence. Tests retain tight early-step agreement, independently verify diagnostics at both final states, and compare predictions tightly with the fitted state held fixed. See the [extended numerical audit](tests/fixtures/extended-audit.md).
 
+Inherited SIR finite differences are sensitive even over five updates: the first Ubuntu runs differed from the saved basis by `1.03e-7`, while R-only starting perturbations of `1e-15` produced basis differences of `1.40e-7` and objective differences of `1.08e-9`. That state is unfinished, with constrained residual about `0.00758`. Fixed-state objective and prediction checks remain strict. The [extended numerical audit](tests/fixtures/extended-audit.md) records the comparison.
+
 ## Convergence and compatibility
 
 Pseudo-direct `converge=True` now requires the normalized constrained gradient tolerance. Five accepted updates with small average parameter and objective changes can instead report `stagnation`, with `converge=False`. The returned `fn` remains reward RMSE in its original units. Direct learning retains its joint policy/direction criterion. Regression and survival retain their previous small-change stopping rules.
@@ -45,7 +47,7 @@ tree against that installation, and all four examples passed in source and
 installed modes. Import paths were checked explicitly. The matching R source
 also passed `R CMD check` and its installed examples.
 
-A GitHub Actions workflow is prepared for Ubuntu with Python 3.10 and 3.14, including archive installation, the full installed suite, and all four installed examples. It has not yet run. Linux and macOS are not validated by these Windows results, and no broader platform claim is made.
+The [GitHub Actions workflow](https://github.com/teazrq/orthoDr-Python/actions/workflows/ci.yml) checks archive installation, the full installed suite, and all four installed examples on Ubuntu with Python 3.10 and 3.14. Its completed runs record the results for each commit. macOS builds have not been validated.
 
 ```bash
 python -m pytest -q

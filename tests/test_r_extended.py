@@ -145,8 +145,18 @@ def test_extended_exact_r_preprocessing_early_native_trajectory(case):
             "orthogonality_error": float(np.max(np.abs(fit["B"].T @ fit["B"] - np.eye(2)))),
             "itr": fit["itr"], "converge": fit["converge"],
         }))
-    _numeric(fit["B"], expected["B"], atol=1e-8, rtol=1e-7)
-    _numeric(fit["fn"], expected["fn"], atol=2e-10, rtol=2e-9)
+        # R-only 1e-15 starting perturbations move this unfinished five-step
+        # path by 1.40e-7 in B and 1.08e-9 in fn. Use bounds for this case
+        # only; its objective at either fixed state remains tightly checked.
+        # See fixtures/extended-audit.md for the independent sensitivity probe.
+        _numeric(fit["B"], expected["B"], atol=2e-7, rtol=0)
+        _numeric(fit["fn"], expected["fn"], atol=2e-9, rtol=0)
+        _numeric(objective(expected["B"]), expected["fn"], atol=2e-12, rtol=0)
+        _numeric(objective(fit["B"]), fit["fn"], atol=2e-12, rtol=0)
+        _numeric(fit["B"].T @ fit["B"], np.eye(fit["B"].shape[1]), atol=1e-12, rtol=0)
+    else:
+        _numeric(fit["B"], expected["B"], atol=1e-8, rtol=1e-7)
+        _numeric(fit["fn"], expected["fn"], atol=2e-10, rtol=2e-9)
     assert fit["itr"] == expected["itr"]
     assert fit["converge"] == expected["converge"]
 

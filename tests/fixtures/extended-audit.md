@@ -49,6 +49,30 @@ analytic derivatives. Historical pseudo-direct finite-difference discrepancies
 from the previous source revision are preserved in the implementation audit,
 not described as properties of the revised solver.
 
+The first Ubuntu CI run on Python 3.10 and 3.14 differed from the saved
+two-direction SIR basis by `1.03e-7` after five updates. A separate check using
+the pinned, compiled R source reproduced the saved state exactly, then
+perturbed each starting-basis entry by `+/-1e-15`. R-only basis differences
+reached `1.40e-7`, objective differences reached `1.08e-9`, and prediction
+differences on the saved test observations reached `1.03e-6`. Thus even this
+short inherited finite-difference trajectory can amplify rounding. The
+five-update state remains unconverged, with constrained residual about
+`0.00758` against `gtol=1e-6`. Independent SIR equations reproduce the returned
+objectives within `1.7e-18`. Strict fixed-state objective and prediction checks
+are retained; trajectory differences do not establish a different objective
+or a stationary solution.
+
+The Ubuntu objective difference is `7.96e-10`. At the same fixed R basis, its
+objective differs by only `2.71e-19`; reevaluation at its returned basis agrees
+exactly with its reported objective. The initial forward gradient differs by
+`1.95e-12`, consistent with rounding amplified by subtraction and the subsequent
+spectral updates. Orthonormality error is `2.22e-16`. The five-update SIR
+comparison therefore uses absolute bounds of `2e-7` for the basis and `2e-9`
+for the objective, covering the independently observed R-only sensitivity.
+Other trajectory bounds are unchanged. Fixed-state objective and prediction
+checks, returned-state objective consistency, orthonormality, iteration counts
+and convergence flags remain checked.
+
 On the audited Windows build, the 100-update public pseudo-direct predictions
 differed by `4.0e-6`, with both fits stopping at `max_iterations`. Exact-R-start
 native basis differences were zero at one update, `6.4e-14` at five, `3.9e-11`
