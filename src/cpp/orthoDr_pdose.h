@@ -1,0 +1,142 @@
+//    ----------------------------------------------------------------
+//
+//    Orthogonality Constrained Optimization for Dimension Reduction
+//    (orthoDr)
+//
+//    This program is free software; you can redistribute it and/or
+//    modify it under the terms of the GNU General Public License
+//    as published by the Free Software Foundation; either version 2
+//    of the License, or (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public
+//    License along with this program; if not, write to the Free
+//    Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+//    Boston, MA  02110-1301, USA.
+//
+//    ----------------------------------------------------------------
+
+#include "utilities.h"
+
+#ifndef orthoDr_pdose
+#define orthoDr_pdose
+
+orthodr_py::List pdose_direct_evaluate(const arma::mat B,
+                                const arma::mat X,
+                                const arma::colvec A,
+                                const arma::colvec R,
+                                double bw,
+                                const arma::colvec W,
+                                double lambda_reward,
+                                double cayley_step,
+                                bool intercept,
+                                orthodr_py::Nullable<orthodr_py::NumericVector> intercept_bounds,
+                                double alpha);
+
+orthodr_py::List pdose_direct_policy_direction(const arma::vec gradient,
+                                        const arma::mat hessian,
+                                        double alpha,
+                                        const orthodr_py::NumericVector intercept_bounds);
+
+orthodr_py::List pdose_direct_solver(arma::mat B,
+                      const arma::mat X,
+                      const arma::colvec A,
+                      const arma::mat a_dist,
+                      const arma::colvec a_seq,
+                      const arma::colvec R,
+                      const arma::colvec lambda,
+                      double bw,
+                      double rho,
+                      double eta,
+                      double gamma,
+                      double tau,
+                      double epsilon,
+                      double btol,
+                      double ftol,
+                      double gtol,
+                      int maxitr,
+                      int verbose,
+                      int ncore,
+                      double lambda_reward,
+                      bool intercept,
+                      orthodr_py::Nullable<orthodr_py::NumericVector> intercept_bounds);
+
+orthodr_py::List pdose_direct_audit_solver(arma::mat B,
+                                    const arma::mat X,
+                                    const arma::colvec A,
+                                    const arma::mat a_dist,
+                                    const arma::colvec a_seq,
+                                    const arma::colvec R,
+                                    const arma::colvec lambda,
+                                    double bw,
+                                    double rho,
+                                    double eta,
+                                    double gamma,
+                                    double tau,
+                                    double epsilon,
+                                    double btol,
+                                    double ftol,
+                                    double gtol,
+                                    int maxitr,
+                                    int verbose,
+                                    int ncore,
+                                    double lambda_reward,
+                                    bool trace,
+                                    int B_trial_budget,
+                                    orthodr_py::Nullable<orthodr_py::NumericVector> W_initial,
+                                    bool intercept,
+                                    orthodr_py::Nullable<orthodr_py::NumericVector> intercept_bounds,
+                                    orthodr_py::Nullable<orthodr_py::NumericVector> alpha_initial,
+                                    int audit_fail_final_sweep);
+
+orthodr_py::List pdose_direct_spectral_scalar(double SS, double SZ, double ZZ,
+                                       int m, double fallback,
+                                       bool finite_vectors,
+                                       bool evaluation_valid);
+
+arma::vec dosepred(arma::mat B,
+                   arma::mat X,
+                   arma::mat X_test,
+                   double bw,
+                   arma::colvec W);
+				   
+orthodr_py::List pdose_semi_solver(arma::mat B,
+                  const arma::mat& X,
+                  const arma::colvec& R,
+                  const arma::colvec& A,
+                  const arma::colvec a_seq,
+                  const arma::colvec lambda,
+                  const double bw,
+                  double rho,
+                  double eta,
+                  double gamma,
+                  double tau,
+                  double epsilon,
+                  double btol,
+                  double ftol,
+                  double gtol,
+                  int maxitr,
+                  int verbose,
+                  int ncore,
+                  bool intercept);
+
+orthodr_py::List pdose_semi_evaluate(const arma::mat B, const arma::mat X,
+                  const arma::colvec R, const arma::colvec A, double bw,
+                  const arma::colvec a_seq, const arma::colvec lambda,
+                  bool intercept, double cayley_step, double dose_factor);
+
+orthodr_py::List pdose_semi_audit_solver(arma::mat B, const arma::mat& X,
+                  const arma::colvec& R, const arma::colvec& A,
+                  const arma::colvec a_seq, const arma::colvec lambda,
+                  const double bw, double rho, double eta, double gamma,
+                  double tau, double epsilon, double btol, double ftol,
+                  double gtol, int maxitr, int verbose, int ncore,
+                  bool intercept, bool trace, int trial_budget,
+                  int audit_fail_gradient_iteration,
+                  int audit_fail_trial_iteration);
+				   
+#endif

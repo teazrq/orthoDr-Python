@@ -1,0 +1,8 @@
+include LICENSE README.md VALIDATION.md THIRD_PARTY_NOTICES.md
+recursive-include LICENSES *.txt
+recursive-include orthodr/data *.npy *.json
+recursive-include src *.h *.cpp *.json
+recursive-include tools *.py *.R *.json
+recursive-include examples *.py
+recursive-include tests *.py *.json *.md *.pickle
+recursive-include docs *.md

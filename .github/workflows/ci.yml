@@ -1,0 +1,46 @@
+name: Python checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.14"]
+    env:
+      OMP_NUM_THREADS: 2
+      OMP_THREAD_LIMIT: 2
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install shared build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libarmadillo-dev liblapack-dev libblas-dev
+          python -m pip install "setuptools>=77" wheel "pybind11>=3.0" "numpy>=1.24" "scipy>=1.10" "pytest>=7" "matplotlib>=3.6"
+      - name: Build and install the source distribution
+        run: |
+          python setup.py sdist
+          python -m pip install --no-build-isolation --no-deps dist/orthodr-*.tar.gz
+      - name: Build the checkout for source-mode example tests
+        run: python setup.py build_ext --inplace
+      - name: Test the installed package
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c 'import orthodr; print(orthodr.__file__)'
+          python -m pytest "$GITHUB_WORKSPACE/tests" --import-mode=importlib -q
+      - name: Run documented examples against the installation
+        run: python tools/verify_examples.py --installed
