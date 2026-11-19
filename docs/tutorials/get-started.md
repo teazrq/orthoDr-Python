@@ -1,8 +1,8 @@
 # Get started
 
 Install `orthodr`, fit one regression direction, and evaluate predictions on
-observations held out before fitting. This page uses the GitHub source version
-**0.1.0**, with a shared user-wide or machine-wide Python installation.
+observations held out before fitting. This page uses version **2.1.0** with a
+shared user-wide or machine-wide Python installation.
 
 ## Install from source
 
@@ -73,7 +73,7 @@ print(orthodr.__version__)
 print(orthodr.__file__)
 ```
 
-The version is `0.1.0`; the path identifies the installation Python loaded.
+The version should read `2.1.0`. The path identifies the installation Python loaded.
 For source reproducibility, also record `git rev-parse HEAD` in the checkout,
 because different revisions can share a version number.
 
@@ -118,8 +118,11 @@ Supply finite real arrays with observations in rows. `X` has shape `(n, p)`;
 a response, event indicator, dose, or reward has shape `(n,)`. Encode
 categorical variables and handle missing values before fitting. Estimate any
 external preprocessing on training observations and reuse it for new data.
-Regression and dose fitting use predictors on their supplied scale; survival
-fitting standardizes predictors internally.
+Regression uses one pooled predictor scale for optimization. SAVE retains
+its supplied-unit estimating equation. Survival fitting standardizes predictors
+internally.
+All prediction methods accept new data in
+the same coordinates supplied at fitting.
 
 `keep_data` defaults to `False`, so request `True` when you need predictions.
 `FitResult` supports both `fit.B` and `fit["B"]`. Dotted diagnostic names can

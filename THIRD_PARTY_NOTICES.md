@@ -23,7 +23,10 @@ preserved in `LICENSES/orthoDr-source-notice.txt`. `tools/vendor_core.py` record
 and generated SHA256 hashes in `src/cpp/provenance.json`. Changes made for this
 port on 2026-11-16 replace Rcpp data conversion, exceptions, output and interrupt
 handling with a Python bridge. The 2026-11-17 revision adapts the corrected
-pseudo-direct native solver from the matching R source. The callback optimizer and high-level R routines are translated to
+pseudo-direct native solver from the matching R source. A fingerprinted update
+from the R development source revises regression moments and optimization,
+survival line searches, and the dose fitting and prediction kernels. The
+callback optimizer and high-level R routines are translated to
 Python, and the Python API adds explicit input validation and fitted objects.
 
 ## dr

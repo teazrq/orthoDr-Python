@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mechanically adapt the committed orthoDr C++ kernels to the Python bridge.
+"""Mechanically adapt the verified orthoDr C++ kernels to the Python bridge.
 
 Pass the R package's src directory explicitly. The source is never modified.
 The adapter changes only interface types, diagnostics and includes. gen_solver
@@ -19,6 +19,7 @@ DESTINATION = Path(__file__).resolve().parents[1] / "src" / "cpp"
 EXCLUDED = {"gen_solver.cpp", "orthoDr_gen.h", "RcppExports.cpp"}
 SOURCE_REVISION = "a9588d8dd73c39188d1c46f371763addb10bee9a"
 SOURCE_MANIFEST = Path(__file__).with_name("r_source_manifest.json")
+NATIVE_OVERLAY = Path(__file__).with_name("r_native_source_overlay.json")
 
 
 def source_bytes(path: Path) -> bytes:
@@ -38,7 +39,7 @@ def validate_source(source: Path, expected: dict) -> None:
                if hashlib.sha256(source_bytes(path)).hexdigest()
                != expected["files"][name]["source_sha256"]]
     if changed:
-        raise ValueError("Source differs from the pinned R revision: " + ", ".join(sorted(changed)))
+        raise ValueError("Source differs from the verified R fingerprints: " + ", ".join(sorted(changed)))
 
 
 def transform(text: str, name: str) -> str:
@@ -69,6 +70,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("--dest", type=Path, default=DESTINATION)
+    parser.add_argument("--native-overlay", "--regression-overlay", action="store_true",
+                        help="use the fingerprinted native changes to the R baseline")
     args = parser.parse_args()
     source, dest = args.source.resolve(), args.dest.resolve()
     if not (source / "orthoDr_pdose.h").is_file():
@@ -83,13 +86,30 @@ def main() -> int:
         for name, digest in pin["source_files_sha256"].items()
         if name.startswith("src/") and Path(name).suffix in {".cpp", ".h"}
         and Path(name).name not in EXCLUDED}}
+    revision = SOURCE_REVISION
+    overlay = None
+    if args.native_overlay:
+        overlay = json.loads(NATIVE_OVERLAY.read_text(encoding="utf-8"))
+        if overlay["base_revision"] != SOURCE_REVISION:
+            parser.error("Native overlay does not match the R baseline")
+        overlay_files = overlay["files"]
+        expected["files"].update(overlay_files)
+        identity = hashlib.sha256(json.dumps(overlay_files, sort_keys=True).encode()).hexdigest()
+        revision += "+native." + identity
     try:
         validate_source(source, expected)
     except ValueError as exc:
         parser.error(str(exc))
-    manifest = {"upstream": "https://github.com/teazrq/orthoDr", "revision": SOURCE_REVISION,
+    manifest = {"upstream": "https://github.com/teazrq/orthoDr", "revision": revision,
                 "license": "GPL-2.0-or-later",
                 "source_hash_convention": pin["source_hash_convention"], "files": {}}
+    if overlay:
+        manifest["base_revision"] = SOURCE_REVISION
+        manifest["source_overlay"] = sorted(overlay_files)
+        for name, hashes in overlay_files.items():
+            generated = transform(source_bytes(source / name).decode("utf-8"), name)
+            if hashlib.sha256(generated.encode()).hexdigest() != hashes["generated_sha256"]:
+                parser.error(f"Generated {name} differs from the recorded fingerprint")
     changed = 0
     for path in sorted(source.iterdir()):
         if path.suffix not in {".cpp", ".h"} or path.name in EXCLUDED:

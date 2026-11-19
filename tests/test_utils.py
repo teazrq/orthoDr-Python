@@ -97,6 +97,24 @@ def test_cpsir_tied_events_are_permutation_equivariant_and_normalized():
         CP_SIR(np.column_stack((x[:, 0], x[:, 0])), y, censor)
 
 
+def test_cpsir_recovers_failure_direction_with_covariate_dependent_censoring():
+    # The staggered product grid makes the censoring coordinate's risk-set
+    # mean equal its instantaneous failure mean at every event time.
+    grid = np.arange(16.) / 16
+    failure = np.repeat(grid, grid.size)
+    censoring = np.tile(grid + .5 / grid.size, grid.size)
+    mixing = np.array([[1., .6], [-.3, 2.]])
+    x = np.column_stack((failure, censoring)) @ mixing
+    expected = np.linalg.solve(mixing, [1., 0.])
+    expected /= np.linalg.norm(expected)
+
+    # With a single window containing all failures, the smoothed mean on the
+    # right mixes the failure contrast with drift in the censoring coordinate.
+    fit = CP_SIR(x, np.minimum(failure, censoring), failure < censoring, bw=2.)
+    assert_allclose(abs(fit["vectors"][:, 0] @ expected), 1., atol=1e-12, rtol=0)
+    assert_allclose(fit["values"][1], 0., atol=1e-12)
+
+
 def test_psave_small_slices_retain_identity_and_p1_is_exact():
     x = np.array([[1., 0.], [0., 1.], [-1., 0.], [0., -1.]])
     moment = _grouped_save_moment(x, np.arange(4.), np.ones(4), 4)

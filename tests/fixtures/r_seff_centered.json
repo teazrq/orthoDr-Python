@@ -1,0 +1,124 @@
+{
+  "provenance": {
+    "source_sha": "a9588d8dd73c39188d1c46f371763addb10bee9a",
+    "source_files_md5": {
+      "DESCRIPTION": "1927cb47ea56b722072ba04802591acb",
+      "NAMESPACE": "490d7ad61fb41940585a180e81247663",
+      "R/CP_SIR.R": "311d2dff5b35f3268b3755e958da4f68",
+      "R/RcppExports.R": "c4445d066b89da7bee10c6abe82f014d",
+      "R/dist_cross.R": "2e8e2157573ace69de2b92c29ee0c52f",
+      "R/distance.R": "910e2746d0141e7d5745550664788b7e",
+      "R/hMave.R": "aa09499942b39f7a671d1f3609a0fe14",
+      "R/kernel_weight.R": "f8bedd720c4eea3c25a4887d4eb49b75",
+      "R/orthoDr-package.R": "ae22d2bed0007fd53a95ba30f4d95954",
+      "R/orthoDr_pdose.R": "aff9f34a661bf1cea82a0d499f33df6e",
+      "R/orthoDr_reg.R": "b4fc402b9761631667ae0fd695cf75c7",
+      "R/orthoDr_surv.R": "0a2135e0f8c6c5b727c0187ee83f2365",
+      "R/ortho_optim.R": "a28637700516ab0e144ac2f8f8a6db2b",
+      "R/pSAVE.R": "4ce68f154edf50b08b9e12ea40214235",
+      "R/param_check.R": "b57afb8e7f78d5ced0ce75fab0449317",
+      "R/predict.R": "24d056270ba5ff6ffcfa5f8cc16173fc",
+      "R/print.R": "af5a8a7a7cbd564fd75ade7c6c6c4ab1",
+      "R/silverman.R": "40bd3b6cd2f592df82e8af826948533f",
+      "R/skcm.R": "b9bf9e59f89c5031f13027154f3faf55",
+      "R/view_dr_surv.R": "bdd38eb1862a2ab9a08a0a766d9f14eb",
+      "src/Makevars": "21e730f14e6fb33150cde4b9cb254344",
+      "src/Makevars.win": "21e730f14e6fb33150cde4b9cb254344",
+      "src/RcppExports.cpp": "40c59b9428171e861828b5c21ee7e0d5",
+      "src/gen_solver.cpp": "a84a5d79f715e42b1a92247017aeb411",
+      "src/orthoDr.h": "725b03bc4e2074491c11f440b34222c6",
+      "src/orthoDr_gen.h": "d39590636a2e3613d346c1a5cd3a12b8",
+      "src/orthoDr_pdose.h": "958be607e10ce1b0412dabad177dc8ca",
+      "src/orthoDr_reg.h": "dcd22ec5a6d33eb10583a3b03ee91273",
+      "src/orthoDr_surv.h": "bb5a04e64e045aff21d37ecfb19e9886",
+      "src/pdose_direct_solver.cpp": "5be1e83c122c99044dbab618d5b10f10",
+      "src/pdose_kernel_dose.cpp": "cde9c335f5479eddb67a7b9cb798681b",
+      "src/pdose_semi_solver.cpp": "9fa0bb2d52fe8fe4bd4e8b427d1a96ab",
+      "src/reg_local_solver.cpp": "0320fce05f56fb78e56fb558dc85f22d",
+      "src/reg_phd_solver.cpp": "050c1df59b58b1a851e9aa4750bc303f",
+      "src/reg_save_solver.cpp": "c2502e859d1aead872b12a4c7c146baa",
+      "src/reg_seff_solver.cpp": "fe00f1e15b9de57d490b81973e5fe8de",
+      "src/reg_sir_solver.cpp": "ad46a42517a941c846258ab75f1ffc6c",
+      "src/reg_solver_shared.cpp": "9fe5386392d5079c8719ccf6320554c7",
+      "src/solver_numerics.h": "61c233b968975a17390881c96622a2c3",
+      "src/surv_dm_solver.cpp": "bfbf473cf160aecc41099ec9f6b129ab",
+      "src/surv_dn_solver.cpp": "fa9d56bbed4f7db0f1fd83f24620466b",
+      "src/surv_forward_solver.cpp": "eacf4fa07dd1354d38d902a20e35ba9e",
+      "src/utilities.cpp": "00d3100553308ceeba89dd2abb57a11b",
+      "src/utilities.h": "b5b6f91877e8862d729c3f1300334807"
+    },
+    "source_hash_convention": "CRLF normalized to LF; all other bytes unchanged",
+    "source_fixture": "r_reference.json",
+    "oracle": "Pinned R wrapper fitted to column-centered X; raw X restored for prediction",
+    "R_version": "R version 4.6.1 (2026-06-24 ucrt)",
+    "platform": "x86_64-w64-mingw32",
+    "packages": {
+      "orthoDr": "2.0.0",
+      "pkgload": "1.5.3",
+      "jsonlite": "2.0.0",
+      "Rcpp": "1.1.2",
+      "RcppArmadillo": "15.4.2.1",
+      "dr": "3.0.11",
+      "pracma": "2.4.6"
+    },
+    "session_info": ["R version 4.6.1 (2026-06-24 ucrt)", "Platform: x86_64-w64-mingw32/x64", "Running under: Windows 11 x64 (build 26300)", "", "Matrix products: default", "  LAPACK version 3.12.1", "", "locale:", "[1] C", "system code page: 65001", "", "time zone: America/Chicago", "tzcode source: internal", "", "attached base packages:", "[1] stats     graphics  grDevices utils     datasets  methods   base     ", "", "other attached packages:", "[1] orthoDr_2.0.0", "", "loaded via a namespace (and not attached):", " [1] knitr_1.51             cli_3.6.6              xfun_0.60             ", " [4] rlang_1.3.0            otel_0.2.0             processx_3.9.0        ", " [7] misc3d_0.9-2           pkgload_1.5.3          jsonlite_2.0.0        ", "[10] htmltools_0.5.9        rprojroot_2.1.1        plot3D_1.4.2          ", "[13] pracma_2.4.6           pkgbuild_1.4.8         grid_4.6.1            ", "[16] evaluate_1.0.5         base64enc_0.1-6        fastmap_1.2.0         ", "[19] MASS_7.3-65            rgl_1.3.36             compiler_4.6.1        ", "[22] htmlwidgets_1.6.4      Rcpp_1.1.2             digest_0.6.39         ", "[25] tcltk_4.6.1            lattice_0.22-9         R6_2.6.1              ", "[28] splines_4.6.1          magrittr_2.0.5         callr_3.8.0           ", "[31] dr_3.0.11              Matrix_1.7-5           tools_4.6.1           ", "[34] RcppArmadillo_15.4.2-1 survival_3.8-6         desc_1.4.3            "]
+  },
+  "regression": {
+    "seff_d1": {
+      "expected": {
+        "B": [
+          [0.79753730568367898],
+          [0.6002700611372136],
+          [0.060084105594936876]
+        ],
+        "fn": 0.0042200923958969124,
+        "itr": 7,
+        "converge": false,
+        "method": "seff",
+        "keep.data": true,
+        "bw": 0.5172818579717865
+      },
+      "prediction": {
+        "pred": [0.0086860100551006073, -0.045900130714490513, -0.14350481701971271, 0.44403733347430668]
+      }
+    },
+    "seff_d2": {
+      "expected": {
+        "B": [
+          [0.80475660822689832, 0.041952911609620995],
+          [0.46980150944972149, 0.56470708495075517],
+          [-0.36284065818744976, 0.8242243999141835]
+        ],
+        "fn": 0.00061177704427726261,
+        "itr": 7,
+        "converge": false,
+        "method": "seff",
+        "keep.data": true,
+        "bw": 0.55032120814910446
+      },
+      "prediction": {
+        "pred": [-0.16678968157903598, -0.080814288210726032, 0.080711098976469289, -0.10211957429862766]
+      }
+    }
+  },
+  "default_fits": {
+    "reg_seff": {
+      "expected": {
+        "B": [
+          [-0.14275348271047078, 0.70789688736430434],
+          [0.95096332533437322, 0.29185370670257232],
+          [-0.27439059211828448, 0.64319780063670784]
+        ],
+        "fn": 0.0019972088132289077,
+        "itr": 7,
+        "converge": false,
+        "method": "seff",
+        "keep.data": true,
+        "bw": 0.55032120814910446
+      },
+      "prediction": {
+        "pred": [-0.32393068637744726, -0.26369367741241884, 0.16197757595996723, 0.26573291383803926]
+      }
+    }
+  }
+}

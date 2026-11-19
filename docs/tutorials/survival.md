@@ -38,7 +38,7 @@ print("First event times:", np.round(curves["timepoints"][:3], 6))
 Observed output from a Windows source build:
 
 ```text
-Converged: True Iterations: 9
+Converged: True Iterations: 11
 Survival matrix: (69, 30)
 First event times: [0.009067 0.012287 0.018694]
 ```
@@ -96,7 +96,24 @@ The optional `view_dr_surv` utility plots observed time against one reduced
 direction, distinguishing events and censored observations. Its `type="3D"`
 view displays a weighted survival surface. It returns Matplotlib axes so you
 can label and save a figure. The default time transformation is logarithmic,
-which requires positive observed times. See
+which requires positive observed times.
+
+```python
+from orthodr import view_dr_surv
+
+ax = view_dr_surv(
+    X[:110], time[:110], event[:110], B=fit.B,
+    FUN="log", type="3D", ylab="Log time",
+)
+```
+
+The time knots combine every observed event time with the 0th through 100th
+pooled follow-up percentiles, selecting observed values without interpolation
+and removing duplicates. They span the actual follow-up range on the chosen
+time scale. Survival is calculated on the original follow-up times. Knots
+that coincide on the display show the latest knot's survival probability.
+A single distinct time is shown as a line. Use `FUN="identity"`
+and `ylab="Time"` to keep the original time units. See
 [plotting and data access](../api.md#plotting-and-example-data) for the full
 options and the optional shared Matplotlib dependency.
 

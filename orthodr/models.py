@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
+from math import frexp, ldexp
 import numpy as np
 from scipy.stats import rankdata
 
-from ._utils import numeric_matrix, numeric_vector, positive_integer, gram_schmidt, control_check, silverman
+from ._prediction import gaussian_mean, prediction_log_weights, weighted_km
+from ._utils import (_reject_mask, control_check, gram_schmidt, numeric_matrix,
+                     numeric_vector, positive_integer, silverman, survival_coordinates,
+                     raw_predictor_directions, survival_status, survival_times)
 from .initializers import CP_SIR, pSAVE, regression_initializers
 
 
@@ -19,6 +23,7 @@ def _native():
 
 
 def _scalar(value, name, *, lower=0, strict=False):
+    _reject_mask(value, name)
     a = np.asarray(value)
     if a.ndim or a.dtype.kind not in "iuf" or not np.isfinite(a):
         raise ValueError(f"{name} must be one finite real number")
@@ -118,15 +123,92 @@ def _result(native, kind, method, bw, x, keep_data, **training):
     return result
 
 
+def _reg_working_predictors(x, method):
+    with np.errstate(over="ignore"):
+        differences = x - x[0]
+    shrink = 1
+    if not np.isfinite(differences).all():
+        # Halving first allows differences between opposite finite extremes.
+        shrink = 2
+        differences = x / shrink - x[0] / shrink
+    peak = np.max(np.abs(differences))
+    if peak == 0:
+        raise ValueError(f"{method.upper()} requires predictor variation")
+    unit = differences / peak
+    centered = unit - unit.mean(axis=0)
+    rms = np.sqrt(np.sum(centered**2) / ((len(x) - 1) * x.shape[1]))
+    return centered / rms, (shrink, peak, rms)
+
+
+def _sir_local_predictors(x, scale):
+    # Preserve represented gaps for narrow kernels by removing only offsets
+    # that subtract exactly and using a power-of-two scale before differencing.
+    lower, upper = x.min(axis=0), x.max(axis=0)
+    origin = np.where((lower > 0) & (upper / 2 <= lower), lower,
+                      np.where((upper < 0) & (lower / 2 >= upper), upper, 0.))
+    exponent = sum(frexp(part)[1] - 1 for part in scale)
+    binary_scale = ldexp(1., max(-1074, min(1023, exponent)))
+    shrink, peak, rms = scale
+    return (x - origin) / binary_scale, 1 / ((peak / binary_scale) * shrink * rms)
+
+
+def _sir_fitting_coordinates(x, centered, scale, candidates, bw):
+    eps = np.finfo(float).eps
+    peak = np.max(np.abs(centered), axis=0)
+    if bw < np.sqrt(eps) or any(
+        np.any((eps * peak) @ np.abs(B) > np.sqrt(eps) * bw * (centered @ B).std(axis=0, ddof=1))
+        for B in candidates
+    ):
+        local, pooled_ratio = _sir_local_predictors(x, scale)
+        return local, {"pooled_ratio": pooled_ratio}
+    return centered, {}
+
+
+def _save_objective_scale(scale, pooled_ratio):
+    # A SAVE moment is s**2 A - s**4 D after division by the pooled SD s.
+    # Preserve the ratio between the terms, with both weights bounded by one.
+    shrink, peak, rms = scale
+    large = peak >= 1 / (shrink * rms)
+    if large:
+        identity, covariance, power = (1 / peak / shrink / rms)**2, 1., 8
+    else:
+        identity, covariance, power = 1., (peak * (shrink * rms))**2, 4
+    return {"identity_weight": identity,
+            "covariance_weight": covariance * pooled_ratio**2,
+            "moment_scale": pooled_ratio**4}, power
+
+
+def _reg_original_objective(fn, scale, power):
+    # Keep the binary exponent separate until the original-unit objective
+    # has been formed, even when raising the scale to a power overflows.
+    if fn == 0 or not np.isfinite(fn):
+        return fn
+    fraction, exponent = frexp(fn)
+    for part in scale:
+        mantissa, part_exponent = frexp(part)
+        fraction *= mantissa**power
+        exponent += power * part_exponent
+    try:
+        return ldexp(fraction, exponent)
+    except OverflowError:
+        return float("inf")
+
+
 def orthoDr_reg(x, y, method="sir", ndr=2, B_initial=None, bw=None,
                 keep_data=False, control=None, maxitr=500, verbose=0, ncore=1):
     """Fit regression directions by SIR, SAVE, PHD, LOCAL or efficient estimation.
 
-    ``x`` has observations in rows. Predictors are used on their supplied scale;
-    apply any desired standardization consistently to training and new data.
+    ``x`` has observations in rows. SIR, PHD, LOCAL, and SEFF center the
+    predictors and use one pooled predictor scale for optimization. PHD uses
+    centered outer products. SAVE adjusts the objective scale for numerical
+    stopping while retaining its supplied-unit estimating equation. All
+    methods return ``fn`` in the supplied predictor units. Apply any desired
+    standardization consistently to training and new data.
     Set ``keep_data=True`` to predict mean responses. As in R, at least five
-    iterations are allowed. Automatic initialization uses SIR/SAVE/PHD candidates;
-    one-direction LOCAL uses three fits selected by in-sample kernel R-squared.
+    iterations are allowed. One varying predictor defaults to the scalar basis
+    ``[[1]]``. With multiple predictors, automatic initialization uses
+    SIR/SAVE/PHD candidates; one-direction LOCAL selects among three fitted starts
+    by in-sample kernel R-squared.
     """
     if method not in ("sir", "save", "phd", "local", "seff"):
         raise ValueError("method must be 'sir', 'save', 'phd', 'local', or 'seff'")
@@ -134,10 +216,12 @@ def orthoDr_reg(x, y, method="sir", ndr=2, B_initial=None, bw=None,
     x = numeric_matrix(x, "x", min_rows=2)
     y = numeric_vector(y, "y", n=x.shape[0])
     d = min(positive_integer(ndr, "ndr"), x.shape[1])
+    if x.shape[1] == 1 and np.all(x[:, 0] == x[0, 0]):
+        raise ValueError("A one-predictor fit requires a varying predictor")
     if d > 4:
         warnings.warn("More than four directions is not recommended for kernel estimation.", UserWarning)
     sy = np.std(y, ddof=1)
-    if sy <= 0:
+    if np.all(y == y[0]) or sy <= 0:
         raise ValueError("y must have positive sample variance")
     Y = ((y - y.mean()) / sy / x.shape[0] ** (-1 / (d + 5)) / np.sqrt(2))[:, None]
     bw = _bandwidth(bw, d, x.shape[0])
@@ -145,13 +229,24 @@ def orthoDr_reg(x, y, method="sir", ndr=2, B_initial=None, bw=None,
     args = _control_args(controls) + [_iterations(maxitr, 5), _integer(verbose, "verbose"), _integer(ncore, "ncore")]
     core = _native()
     solver = getattr(core, method + "_solver")
+    centered, scale = _reg_working_predictors(x, method)
+    X = centered
+    solver_args = {}
+    objective_power = 2 if method in ("local", "seff") else 4
+    if method == "save":
+        X, pooled_ratio = _sir_local_predictors(x, scale)
+        solver_args, objective_power = _save_objective_scale(scale, pooled_ratio)
+    if args[-2] > 0:
+        print(f"{method.upper()} optimizer diagnostics use the predictor-scale-adjusted objective.", flush=True)
+    if B_initial is None and x.shape[1] == 1:
+        B_initial = np.ones((1, 1))
     if B_initial is None:
-        bases = regression_initializers(x, Y[:, 0])
+        bases = regression_initializers(centered, Y[:, 0])
         candidates = [_basis(bases[m][:, :d], x.shape[1], d) for m in ("sir", "save", "phd")]
         if method == "local" and d == 1:
-            fits = [solver(B, x, Y, bw, *args) for B in candidates]
+            fits = [solver(B, X, Y, bw, *args) for B in candidates]
             def r_squared(fit):
-                u = x @ fit["B"]
+                u = X @ fit["B"]
                 u = u / (np.std(u, ddof=1) * bw * np.sqrt(2))
                 K = np.exp(-((u[:, None, :] - u[None, :, :]) ** 2).sum(axis=2))
                 fitted = K @ Y[:, 0] / K.sum(axis=0)
@@ -166,17 +261,24 @@ def orthoDr_reg(x, y, method="sir", ndr=2, B_initial=None, bw=None,
                 if np.linalg.norm(residual) > 1e-7 * np.linalg.norm(mixed[:, 1]):
                     candidates.append(gram_schmidt(mixed))
             objective = getattr(core, "local_f" if method == "local" else method + "_init")
-            values = [objective(B, x, Y, bw, args[-1]) for B in candidates]
-            native = solver(candidates[int(np.argmin(values))], x, Y, bw, *args)
+            if method == "sir":
+                X, solver_args = _sir_fitting_coordinates(x, X, scale, candidates, bw)
+            values = [objective(B, X, Y, bw, args[-1], **solver_args) for B in candidates]
+            native = solver(candidates[int(np.argmin(values))], X, Y, bw, *args, **solver_args)
     else:
-        native = solver(_basis(B_initial, x.shape[1], d), x, Y, bw, *args)
+        B = _basis(B_initial, x.shape[1], d)
+        if method == "sir":
+            X, solver_args = _sir_fitting_coordinates(x, X, scale, [B], bw)
+        native = solver(B, X, Y, bw, *args, **solver_args)
+    native["fn"] = _reg_original_objective(native["fn"], scale, objective_power)
     return _result(native, "reg", method, bw, x, keep_data, y=y)
 
 
 def orthoDr_surv(x, y, censor, method="dm", ndr=None, B_initial=None, bw=None,
                  keep_data=False, control=None, maxitr=500, verbose=0, ncore=1):
-    """Fit censored-outcome directions; ``censor=1`` denotes an observed event.
+    """Fit censored-outcome directions with 0 for censoring and 1 for an event.
 
+    Boolean ``censor`` values are accepted. Invalid values raise ``ValueError``.
     Methods are ``'forward'`` (one direction), ``'dn'`` and ``'dm'``.
     Prediction returns weighted survival curves at sorted observed event times,
     retaining repeated event times to match R. Tied events share complete risk
@@ -187,9 +289,9 @@ def orthoDr_surv(x, y, censor, method="dm", ndr=None, B_initial=None, bw=None,
     _check_keep_data(keep_data)
     x = numeric_matrix(x, "x", min_rows=2)
     n, p = x.shape
-    y = numeric_vector(y, "y", n=n)
-    censor = numeric_vector(censor, "censor", n=n, allow_bool=True)
-    if not np.isin(censor, [0, 1]).all() or not (censor == 1).any():
+    y = survival_times(y, n)
+    censor = survival_status(censor, n)
+    if not (censor == 1).any():
         raise ValueError("censor must contain 0/1 indicators with at least one observed event")
     if ndr is None:
         ndr = 1 if method == "forward" else 2
@@ -198,15 +300,23 @@ def orthoDr_surv(x, y, censor, method="dm", ndr=None, B_initial=None, bw=None,
         warnings.warn("The forward method uses one direction.", UserWarning)
         d = 1
     bw = _bandwidth(bw, d, n)
-    sx = np.std(x, axis=0, ddof=1)
-    if np.any(sx <= 0):
-        raise ValueError("Each predictor must have positive sample variance")
-    X = (x - x.mean(axis=0)) / sx
+    X, sx = survival_coordinates(x)
     ranks = rankdata(y, method="average") / (n + 1)
     sy = np.std(ranks, ddof=1)
     Y = np.zeros(n) if sy == 0 else (ranks - ranks.mean()) / sy / np.sqrt(2) / silverman(1, n)
-    B = CP_SIR(X, Y, censor)["vectors"][:, :d] if B_initial is None else B_initial
+    if B_initial is None:
+        B = CP_SIR(X, Y, censor)["vectors"][:, :d]
+    else:
+        B = B_initial
     B = _basis(B, p, d)
+    def check_projection(b):
+        singular = np.linalg.svd(X @ b, compute_uv=False)
+        tol = max(X.shape) * np.finfo(float).eps * np.linalg.norm(X)
+        if len(singular) < b.shape[1] or np.any(singular <= tol):
+            raise ValueError("The survival directions must give linearly independent, varying projected predictors.")
+
+    if B_initial is not None:
+        check_projection(B)
     order = np.argsort(Y, kind="stable")
     X, Y, C = X[order], Y[order], censor[order]
     events = np.flatnonzero(C == 1)
@@ -224,8 +334,9 @@ def orthoDr_surv(x, y, censor, method="dm", ndr=None, B_initial=None, bw=None,
             weight = C * ky[:, event]
             phi[:, j] = (weight @ X) / weight.sum() - X[starts[j]:].mean(axis=0)
         native = getattr(core, "surv_" + method + "_solver")(B, X, phi, events + 1, starts + 1, bw, *args)
-    raw = np.asarray(native["B"]) / sx[:, None]
-    native["B"] = raw / np.linalg.norm(raw, axis=0)
+    if B_initial is not None:
+        check_projection(np.asarray(native["B"]))
+    native["B"] = raw_predictor_directions(np.asarray(native["B"]), sx)
     return _result(native, "surv", method, bw, x, keep_data, y=y, censor=censor)
 
 
@@ -243,6 +354,10 @@ def orthoDr_pdose(x, a, r, ndr=2, B_initial=None, bw=None, lambda_init=0.1,
     it is unbounded and remains off by default. Direct learning instead centers
     kernel features and bounds its average fitted training dose. Individual
     predictions are not clipped under either method.
+
+    If several grid doses tie for the highest estimated reward to numerical
+    precision, pseudo-direct learning uses the lowest of them as the training
+    target for the ridge fit.
 
     Inspect ``converge``, ``gradient_norm`` and ``stop_reason``. Pseudo-direct
     convergence requires a small constrained gradient of reward-standardized
@@ -270,6 +385,7 @@ def orthoDr_pdose(x, a, r, ndr=2, B_initial=None, bw=None, lambda_init=0.1,
     sa = np.std(a, ddof=1)
     if not np.isfinite(sa) or sa <= 0:
         raise ValueError("Observed doses must have positive finite sample variance")
+    _reject_mask(lambda_init, "lambda_init")
     lam = np.atleast_1d(np.asarray(lambda_init))
     if lam.ndim != 1 or lam.dtype.kind not in "iuf" or not len(lam) or not np.isfinite(lam).all() or np.any(lam <= 0):
         raise ValueError("lambda_init must contain positive finite ridge parameters")
@@ -315,16 +431,6 @@ def _test_matrix(fit, x):
     return x
 
 
-def _prediction_kernel(fit, x):
-    u, v = fit["x"] @ fit["B"], x @ fit["B"]
-    scale = np.std(u, axis=0, ddof=1) * fit["bw"] * np.sqrt(2)
-    if np.any(scale <= 0) or not np.isfinite(scale).all():
-        raise ValueError("Training projection scales must be positive and finite")
-    mean = u.mean(axis=0)
-    u, v = (u - mean) / scale, (v - mean) / scale
-    return np.exp(-((v[:, None, :] - u[None, :, :]) ** 2).sum(axis=2))
-
-
 def predict(fit, testx):
     """Return R-compatible prediction fields: ``pred``, or ``surv`` and ``timepoints``."""
     if not isinstance(fit, FitResult):
@@ -357,31 +463,36 @@ def predict(fit, testx):
         pred = np.asarray(_native().dosepred(fit["B"], fit["x"], testx, fit["bw"], fit["W"])).reshape(-1)
         pred += offset
         return {"pred": pred}
-    weights = _prediction_kernel(fit, testx)
-    underflow = weights.sum(axis=1) == 0
+    if fit["kind"] == "surv":
+        try:
+            censor = survival_status(fit.get("censor"), len(fit["x"]))
+        except ValueError as exc:
+            raise ValueError(f"Invalid stored survival status. {exc} "
+                             "Recode the original status data and refit the survival model.") from exc
+        try:
+            stored_times = survival_times(fit.get("y"), len(fit["x"]), "Stored y")
+        except ValueError as exc:
+            raise ValueError(f"{exc} Correct the original follow-up times and refit the survival model.") from exc
+    bw = fit.get("bw")
+    if bw is None:
+        raise ValueError("This fitted object has no bandwidth. Supply the original bandwidth or refit the model.")
+    bw = _scalar(bw, "The fitted bandwidth", lower=0, strict=True)
+    log_weights = prediction_log_weights(fit["x"], testx, fit["B"], bw)
+    # A positive subnormal absolute weight is sufficient to support a row.
+    with np.errstate(under="ignore"):
+        underflow = np.exp(log_weights.max(axis=1)) == 0
     if underflow.any():
         warnings.warn("Gaussian prediction weights underflowed; affected predictions are NaN.", RuntimeWarning)
     if fit["kind"] == "reg":
         out = np.full(len(testx), np.nan)
-        np.divide(weights @ fit["y"], weights.sum(axis=1), out=out, where=~underflow)
+        y = np.asarray(fit["y"])
+        for i in np.flatnonzero(~underflow):
+            out[i] = gaussian_mean(log_weights[i], y)
         return {"pred": out}
     if fit["kind"] != "surv":
         raise ValueError("Unknown fitted model kind")
-    order = np.argsort(fit["y"], kind="stable")
-    times, observed = fit["y"][order], fit["censor"][order] == 1
-    weights = weights[:, order].T
-    starts = np.r_[0, np.flatnonzero(np.diff(times) != 0) + 1]
-    blocks = np.cumsum(np.r_[True, np.diff(times) != 0]) - 1
-    masses = np.add.reduceat(weights, starts, axis=0)
-    deaths = np.add.reduceat(weights * observed[:, None], starts, axis=0)
-    risk = np.cumsum(masses[::-1], axis=0)[::-1]
-    tolerance = 64 * np.finfo(float).eps * np.maximum(np.abs(deaths), np.abs(risk))
-    if np.any(deaths - risk > tolerance):
-        raise ValueError("Weighted survival death mass exceeds its risk mass")
-    deaths = np.minimum(deaths, risk)
-    factors = np.ones_like(risk)
-    np.divide(deaths, risk, out=factors, where=deaths > 0)
-    factors = np.where(deaths > 0, 1 - factors, 1)
-    survival = np.cumprod(factors, axis=0)
-    survival[:, underflow] = np.nan
-    return {"surv": survival[blocks[observed]], "timepoints": times[observed].copy()}
+    order, blocks, survival = weighted_km(log_weights[~underflow], stored_times, censor == 1)
+    observed = censor[order] == 1
+    out = np.full((int(observed.sum()), len(testx)), np.nan)
+    out[:, ~underflow] = survival[blocks[observed]]
+    return {"surv": out, "timepoints": stored_times[order[observed]]}

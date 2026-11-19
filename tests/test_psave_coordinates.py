@@ -9,6 +9,7 @@ from numpy.testing import assert_allclose
 from scipy.linalg import eig
 
 import orthodr.initializers as initializers
+from orthodr import orthoDr_pdose
 from orthodr.initializers import dr_slices, pSAVE
 
 
@@ -73,6 +74,18 @@ def heterogeneous_data(seed=119, n=181, p=4):
     x[high] = x[high] @ transform + np.arange(p)
     r = (x[:, 0] + .4 * x[:, 1]) ** 2 + .3 * x[:, 2] + rng.normal(size=n)
     return x, a, r
+
+
+@pytest.mark.parametrize("scales", [[2.**27, 1., 1., 1.], 2.**np.array([200, -200, 0, -27])])
+def test_psave_whitening_respects_extreme_predictor_units(scales):
+    x, a, r = heterogeneous_data()
+    scales = np.asarray(scales)
+    expected = coordinate_oracle(x, a, r, d=2)
+    scaled = pSAVE(x * scales, a, r, 2)
+    assert_allclose(np.linalg.norm(scaled, axis=0), 1.)
+    mapped = scaled * scales[:, None]
+    mapped /= np.linalg.norm(mapped, axis=0)
+    assert_allclose(projector(mapped), projector(expected["B"]), atol=3e-11, rtol=0)
 
 
 @pytest.mark.parametrize("dose_kind", ["continuous", "tied", "constant"])
@@ -207,3 +220,56 @@ def test_invalid_inputs_preserve_psave_failures():
         pSAVE(np.column_stack((x[:, :3], x[:, 0] + x[:, 1])), a, r, 1)
     with pytest.raises(ValueError, match="finite"):
         pSAVE(x, np.full(len(a), np.nan), r, 1)
+
+
+def test_psave_recognizes_global_constant_predictors_and_scalar_variation():
+    t = np.arange(40)
+    with pytest.raises(ValueError, match="full centred predictor rank"):
+        pSAVE(np.column_stack((t, np.full(len(t), .1))), np.cos(t), np.sin(t) + t / 40, 1)
+    with pytest.raises(ValueError, match="full centred predictor rank"):
+        pSAVE(np.full((40, 1), .1), t, t, 1)
+    tiny = np.nextafter(0., 1.)
+    assert_allclose(pSAVE(np.array([[0.], [tiny], [0.]]), t[:3], t[:3], 1), [[1.]])
+
+
+def test_psave_group_rank_and_covariance_are_translation_invariant(monkeypatch):
+    a = np.arange(1, 13)
+    x = np.column_stack((a, [0.] * 7 + [1., 0., 0., 1., 3.]))
+    expected = coordinate_oracle(x, a, a)
+    kept = []
+    original = initializers._grouped_save_moment
+
+    def record(xx, yy, group, h):
+        kept.append(np.count_nonzero(group))
+        return original(xx, yy, group, h)
+
+    monkeypatch.setattr(initializers, "_grouped_save_moment", record)
+    for shift in [0., .1, 2.**50]:
+        moved = x + [0., shift]
+        kept.clear()
+        actual = pSAVE(moved, a, a, 1)
+        assert kept == [8, 9, 12]
+        assert_allclose(projector(actual), projector(expected["B"]), atol=2e-13, rtol=0)
+        permuted = pSAVE(moved[::-1], a[::-1], a[::-1], 1)
+        assert_allclose(projector(permuted), projector(expected["B"]), atol=2e-13, rtol=0)
+        group_moment = initializers._psave_group_moment(moved[:8], a[:8], 2)
+        assert_allclose(group_moment["covariance"][1, 1], 7 / 64, atol=1e-15, rtol=0)
+
+
+@pytest.mark.parametrize("method", ["direct", "pseudo_direct"])
+def test_psave_dose_policies_match_shared_start_after_predictor_translation(method):
+    t = np.arange(32)
+    u = np.sin(t * 1.234)
+    v = np.where(t < 16, 0., np.cos(t * 3.339))
+    x, a = np.column_stack((u, v)), t / 32
+    reward = .2 * u - 3 * (a - .45 - .3 * np.sin(2 * u))**2
+    query = np.column_stack((np.sin(t * .91), np.cos(t * .51)))
+    optimal = .45 + .3 * np.sin(2 * query[:, 0])
+    fixed = pSAVE(x, a, reward, 1)
+    options = dict(ndr=1, method=method, intercept=True, keep_data=True)
+    control = orthoDr_pdose(x, a, reward, B_initial=fixed, **options).predict(query)
+    assert np.sqrt(np.mean((control - optimal)**2)) < .09
+    for shift in [0., .1]:
+        moved = np.array([0., shift])
+        fit = orthoDr_pdose(x + moved, a, reward, **options)
+        assert_allclose(fit.predict(query + moved), control, atol=5e-7, rtol=0)

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._utils import control_check, gram_schmidt, numeric_matrix, positive_integer
+from ._utils import _reject_mask, control_check, gram_schmidt, numeric_matrix, positive_integer
+
+
+_FEASIBILITY_TOLERANCE = 1e-10
 
 
 def _objective_value(value):
+    _reject_mask(value, "fn result")
     a = np.asarray(value)
     if a.size != 1 or a.dtype.kind not in "iuf":
         raise ValueError("fn must return a single number at every evaluation")
@@ -18,6 +22,7 @@ def _objective_value(value):
 
 
 def _gradient_value(value, shape):
+    _reject_mask(value, "grad result")
     a = np.asarray(value)
     if a.dtype.kind not in "iuf" or a.ndim != 2 or a.shape != shape:
         raise ValueError("grad must return a numeric matrix with the same dimension as B at every evaluation")
@@ -46,108 +51,141 @@ def _stiefel_solver(B, fn, grad, *, control=None, maxitr=500, verbose=0):
     c = control_check(control)
     maxitr = positive_integer(maxitr, "maxitr")
     p, d = B.shape
-    tau = previous_tau = c["tau"]
-    inv_h = not (d < p // 2)  # C++ integer division is intentional.
-    crit = np.zeros((maxitr, 3))
+    tau = c["tau"]
+    dense = d >= p // 2
+    identity = np.eye(d)
+    system_identity = np.eye(p if dense else 2 * d)
+    changes = np.zeros((5, 2))
     sequence = np.zeros(maxitr)
 
     def evaluate_f(b):
         return _objective_value(fn(b.copy()))
 
-    def evaluate_g(b):
+    def projected_gradient(b):
         if grad is not None:
-            return _gradient_value(grad(b.copy()), b.shape)
-        f0 = evaluate_f(b)
-        out = np.empty_like(b)
-        # Column-major evaluation order matches the committed native solver.
-        for j in range(d):
-            for i in range(p):
-                new_b = b.copy()
-                new_b[i, j] += c["epsilon"]
-                out[i, j] = (evaluate_f(new_b) - f0) / c["epsilon"]
-        if not np.all(np.isfinite(out)):
-            raise ValueError("Gradient must be finite at every evaluation")
-        return out
+            g = _gradient_value(grad(b.copy()), b.shape)
+        else:
+            g = np.empty_like(b)
+            # Column-major evaluation order matches the R solver.
+            for j in range(d):
+                for i in range(p):
+                    new_b = b.copy()
+                    new_b[i, j] += c["epsilon"]
+                    above = evaluate_f(new_b)
+                    new_b[i, j] = b[i, j] - c["epsilon"]
+                    g[i, j] = (above - evaluate_f(new_b)) / (2 * c["epsilon"])
+            if not np.all(np.isfinite(g)):
+                raise ValueError("Gradient must be finite at every evaluation")
+        btg = b.T @ g
+        projected = g - b @ (0.5 * btg + 0.5 * btg.T)
+        # Remove any residual normal component after subtracting a large term.
+        residual = b.T @ projected
+        return projected - b @ (0.5 * residual + 0.5 * residual.T)
 
-    def prepare(b, g):
-        if inv_h:
-            gxt = g @ b.T
-            h = 0.5 * (gxt - gxt.T)
-            return h, h @ b
-        u = np.column_stack((g, b))
-        v = np.column_stack((b, -g))
-        return u, v.T @ u, v.T @ b
+    def gradient_norm(projected):
+        norm = float(np.linalg.norm(projected))
+        if not np.isfinite(norm):
+            raise ValueError("Constrained gradient norm must be finite")
+        return norm
+
+    def feasibility(b):
+        return np.linalg.norm(b.T @ b - identity)
+
+    if feasibility(B) > _FEASIBILITY_TOLERANCE:
+        raise ValueError("Initial B must have orthonormal columns")
 
     F = evaluate_f(B)
-    G = evaluate_g(B)
-    prepared = prepare(B, G)
-    dt_x = G - B @ (G.T @ B)
-    norm_g = float(np.linalg.norm(dt_x))
-    if not np.isfinite(norm_g):
-        raise ValueError("Constrained gradient norm must be finite")
-    converged = norm_g < c["gtol"]
-    completed, clean_updates = 0, 0
+    D = projected_gradient(B)
+    norm_g = gradient_norm(D)
+    best_norm = norm_g
+    completed = 0
+    last_improvement = 0
+    reason = "iteration limit reached"
     Q, cval = 1.0, F
     if verbose > 1:
         print(f"Initial value, F = {F}")
 
-    for itr in range(1, maxitr + 1):
-        if converged:
-            break
-        bp, fp, dt_xp = B.copy(), F, dt_x.copy()
-        derivative = c["rho"] * norm_g * norm_g
-        for nls in range(1, 6):
-            if inv_h:
-                h, rx = prepared
-                B = np.linalg.solve(np.eye(p) + tau * h, bp - tau * rx)
-            else:
-                u, vu, vx = prepared
-                aa = np.linalg.solve(np.eye(2 * d) + 0.5 * tau * vu, vx)
-                B = bp - u @ (tau * aa)
-            if not np.all(np.isfinite(B)):
-                raise ValueError("Optimizer update must be finite")
-            F, G = evaluate_f(B), evaluate_g(B)
-            if F <= cval - tau * derivative or nls >= 5:
-                break
-            tau *= c["eta"]
-        completed = itr
-        sequence[itr - 1] = F
-        prepared = prepare(B, G)
-        dt_x = G - B @ (G.T @ B)
-        norm_g = float(np.linalg.norm(dt_x))
-        if not np.isfinite(norm_g):
-            raise ValueError("Constrained gradient norm must be finite")
-        if norm_g < c["gtol"]:
-            converged = True
-            break
-        s = B - bp
-        b_diff = np.linalg.norm(s) / np.sqrt(p)
-        f_diff = abs(fp - F) / (abs(fp) + 1)
-        y = dt_x - dt_xp
-        ss, sy, yy = np.sum(s * s), abs(np.sum(s * y)), np.sum(y * y)
-        tau, valid_bb = _bb_step(ss, sy, yy, itr % 2 == 0, previous_tau)
-        previous_tau = tau
-        clean_updates = clean_updates + 1 if valid_bb and np.isfinite(ss) and ss > 0 else 0
-        crit[itr - 1] = norm_g, b_diff, f_diff
-        if verbose > 1 and itr % 10 == 0:
-            print(f"At iteration {itr}, F = {F}")
-        if itr >= 5:
-            recent = crit[itr - 5:itr]
-            if ((clean_updates > 0 and b_diff < c["btol"] and f_diff < c["ftol"])
-                    or (clean_updates >= 5 and np.mean(recent[:, 1]) < c["btol"]
-                        and np.mean(recent[:, 2]) < c["ftol"])):
-                converged = True
-                break
-        qp = Q
-        Q = c["gamma"] * qp + 1
-        cval = (c["gamma"] * qp * cval + F) / Q
+    while norm_g > c["gtol"] and completed < maxitr:
+        bp, fp = B, F
+        # The tangent gradient defines the same skew generator. Scaling avoids
+        # squaring the ambient gradient's magnitude in the reduced system.
+        unit = D / norm_g
+        direction = unit - B @ (unit.T @ B)
+        slope = c["rho"] * norm_g * float(np.sum(unit * direction))
+        if dense:
+            gbt = unit @ B.T
+            h = 0.5 * (gbt - gbt.T)
+            hb = h @ B
+        else:
+            u = np.column_stack((unit, B))
+            v = np.column_stack((B, -unit))
+            vu = v.T @ u
+            vb = v.T @ B
 
+        step = tau * norm_g
+        accepted = False
+        for _ in range(30):
+            if not np.isfinite(step) or step <= 0:
+                break
+            threshold = cval - step * slope
+            if np.isfinite(threshold):
+                try:
+                    with np.errstate(over="ignore", invalid="ignore"):
+                        if dense:
+                            candidate = np.linalg.solve(system_identity + step * h, B - step * hb)
+                        else:
+                            coefficients = np.linalg.solve(system_identity + 0.5 * step * vu, vb)
+                            candidate = B - u @ (step * coefficients)
+                        feasible = (np.all(np.isfinite(candidate))
+                                    and feasibility(candidate) <= _FEASIBILITY_TOLERANCE)
+                except np.linalg.LinAlgError:
+                    feasible = False
+                if feasible and not np.array_equal(candidate, B):
+                    value = evaluate_f(candidate)
+                    if value <= threshold:
+                        B, F = candidate, value
+                        accepted = True
+                        break
+            smaller = c["eta"] * step
+            if smaller >= step:
+                break
+            step = smaller
+        if not accepted:
+            reason = "line search failed to find a feasible sufficient-decrease step"
+            break
+
+        next_d = projected_gradient(B)
+        s, y = B - bp, next_d - D
+        accepted_tau = step / norm_g
+        D, norm_g = next_d, gradient_norm(next_d)
+        sequence[completed] = F
+        changes[completed % 5] = (np.linalg.norm(s) / np.sqrt(p),
+                                  abs(fp - F) / (abs(fp) + 1))
+        completed += 1
+        if verbose > 1 and completed % 10 == 0:
+            print(f"At iteration {completed}, F = {F}")
+        if norm_g <= c["gtol"]:
+            break
+        if norm_g < best_norm:
+            best_norm = norm_g
+            last_improvement = completed
+        if (completed - last_improvement >= 5 and np.mean(changes[:, 0]) < c["btol"]
+                and np.mean(changes[:, 1]) < c["ftol"]):
+            reason = "parameter and objective changes stagnated"
+            break
+        ss, sy, yy = np.sum(s * s), abs(np.sum(s * y)), np.sum(y * y)
+        tau, _ = _bb_step(ss, sy, yy, completed % 2 == 0,
+                          accepted_tau if accepted_tau > 0 else tau)
+        Q = c["gamma"] * Q + 1
+        cval += (F - cval) / Q
+
+    converged = norm_g <= c["gtol"]
     if verbose:
-        print(f"number of iterations: {completed}")
-        print(f"objective: {F}; gradient norm: {norm_g}")
-        print(f"feasibility norm: {np.linalg.norm(B.T @ B - np.eye(d))}")
         if not converged:
-            print("exceed max iteration before convergence")
+            print(reason)
+        print(f"number of iterations: {completed}")
+        print(f"objective: {F}, gradient norm: {norm_g}")
+        print(f"feasibility norm: {feasibility(B)}")
     return dict(B=B, fn=float(F), fn_Seq=sequence, itr=completed, converge=bool(converged))
 
 
@@ -155,10 +193,12 @@ def ortho_optim(B, fn, grad=None, *args, maximize=False, control=None,
                 maxitr=500, verbose=0, **kwargs):
     """Optimize ``fn(B, *args, **kwargs)`` subject to ``B.T @ B == I``.
 
-    Analytical gradients have the same shape as ``B``. If omitted, forward
+    Analytical gradients have the same shape as ``B``. If omitted, central
     finite differences use ``control['epsilon']``. The returned dictionary
     includes ``B``, ``fn``, zero-padded ``fn_Seq``, ``itr``, ``converge``, and
-    ``method``. Every callback result is checked, including line-search trials.
+    ``method``. Convergence requires the norm of the projected gradient to
+    meet ``control['gtol']``. A failed line search returns the last accepted
+    state with ``converge=False``. Every callback result is checked.
     """
     B = numeric_matrix(B, "B")
     if B.shape[1] > B.shape[0]:

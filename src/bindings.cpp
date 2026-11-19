@@ -8,19 +8,23 @@ using py::arg;
 
 PYBIND11_MODULE(_core, module) {
   module.doc() = "Standalone orthoDr numerical kernels; no R runtime dependency";
-  module.attr("source_revision") = "a9588d8dd73c39188d1c46f371763addb10bee9a";
+  module.attr("source_base_revision") = "a9588d8dd73c39188d1c46f371763addb10bee9a";
+  module.attr("source_revision") = "a9588d8dd73c39188d1c46f371763addb10bee9a"
+    "+native.b522e6dc7fa725890d824dd0b5c04e03372ca9d8c865e595692ba51eaeb8ebe1";
   module.attr("armadillo_version") = arma::arma_version::as_string();
 
   module.def("local_f", &local_f, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"));
-  module.def("sir_init", &sir_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"));
-  module.def("save_init", &save_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"));
+  module.def("sir_init", &sir_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"), arg("pooled_ratio") = 0.0);
+  module.def("save_init", &save_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"),
+             arg("identity_weight") = 1.0, arg("covariance_weight") = 1.0, arg("moment_scale") = 1.0);
   module.def("phd_init", &phd_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"));
   module.def("seff_init", &seff_init, arg("B"), arg("X"), arg("Y"), arg("bw"), arg("ncore"));
 
 #define REG_ARGS arg("B"), arg("X"), arg("Y"), arg("bw"), arg("rho"), arg("eta"), arg("gamma"), arg("tau"), arg("epsilon"), arg("btol"), arg("ftol"), arg("gtol"), arg("maxitr"), arg("verbose"), arg("ncore")
   module.def("local_solver", &local_solver, REG_ARGS);
-  module.def("sir_solver", &sir_solver, REG_ARGS);
-  module.def("save_solver", &save_solver, REG_ARGS);
+  module.def("sir_solver", &sir_solver, REG_ARGS, arg("pooled_ratio") = 0.0);
+  module.def("save_solver", &save_solver, REG_ARGS, arg("identity_weight") = 1.0,
+             arg("covariance_weight") = 1.0, arg("moment_scale") = 1.0);
   module.def("phd_solver", &phd_solver, REG_ARGS);
   module.def("seff_solver", &seff_solver, REG_ARGS);
 #undef REG_ARGS

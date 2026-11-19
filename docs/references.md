@@ -47,6 +47,24 @@ Zhou, W., Zhu, R., and Zeng, D. (2021).
 This paper develops direct and pseudo-direct personalized dose learning and
 their dimension-reduction targets.
 
+## Hazard MAVE
+
+Xia, Y., Zhang, D., and Xu, J. (2010).
+[*Dimension Reduction and Semiparametric Estimation of Survival Models*](https://doi.org/10.1198/jasa.2009.tm09372).
+*Journal of the American Statistical Association*, 105(489), 278-290.
+
+`hMave` uses the authors' hazard-based dimension reduction method for censored survival times.
+
+## Partial SAVE
+
+Feng, Z., Wen, X. M., Yu, Z., and Zhu, L. (2013).
+[*On Partial Sufficient Dimension Reduction With Applications to Partially Linear Multi-Index Models*](https://doi.org/10.1080/01621459.2012.746065).
+*Journal of the American Statistical Association*, 108(501), 237-246.
+
+Feng and colleagues study partial sufficient dimension reduction with
+continuous conditioning variables. In orthoDr, `pSAVE` supplies a starting
+basis for personalized dose estimation.
+
 ## Orthogonality-constrained optimization
 
 Wen, Z., and Yin, W. (2013).

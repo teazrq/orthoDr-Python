@@ -55,6 +55,70 @@ def test_iteration_exhaustion_and_argument_forwarding():
     assert fit["fn_Seq"].shape == (1,)
 
 
+def test_line_search_continues_past_five_trials_or_retains_the_accepted_start():
+    v = np.array([[np.cos(.1)], [np.sin(.1)]])
+    b = np.eye(2)[:, :1]
+
+    def objective(b):
+        z = (v.T @ b).item()
+        return 1e7 * ((1 - z**2) + .1 * (1 - z))
+
+    def gradient(b):
+        return 1e7 * (-2 * (v.T @ b).item() - .1) * v
+
+    first = ortho_optim(b, objective, gradient, maxitr=1)
+    assert first["itr"] == 1
+    assert first["fn"] < objective(b)
+    assert_allclose(first["B"].T @ first["B"], np.eye(1), atol=1e-12)
+
+    failed = ortho_optim(b, objective, gradient, maxitr=3, control={"eta": .99})
+    assert not failed["converge"] and failed["itr"] == 0
+    assert_allclose(failed["B"], b, atol=0, rtol=0)
+    assert failed["fn"] == objective(b)
+    assert_allclose(failed["fn_Seq"], np.zeros(3))
+
+
+@pytest.mark.parametrize("shift", [0., 1e4, 1e8])
+def test_large_normal_gradient_preserves_the_feasible_minimizer(shift):
+    v = np.array([1., 1., 0., 0., 0., 0., 0., 0.]) / np.sqrt(2)
+    b = np.eye(8)[:, :1]
+    a = shift * np.eye(8) - np.outer(v, v)
+    fit = ortho_optim(b, lambda b: np.sum(b * (a @ b)), lambda b: 2 * a @ b)
+    assert fit["converge"]
+    assert_allclose(fit["B"].T @ fit["B"], np.eye(1), atol=1e-12)
+    assert_allclose(abs(v @ fit["B"]), 1, atol=1e-12, rtol=0)
+    assert_allclose(fit["fn"] - shift, -1, atol=1e-6, rtol=0)
+
+
+def test_later_line_search_failure_keeps_the_previous_accepted_update():
+    b = np.eye(2)[:, :1]
+
+    def objective(b):
+        z = b[1, 0]
+        return z - 10 * z**2 - 100 * z**3
+
+    def gradient(b):
+        z = b[1, 0]
+        return np.array([[0.], [1 - 20 * z - 300 * z**2]])
+
+    control = {"tau": .08, "eta": .99, "gamma": 1e-16}
+    first = ortho_optim(b, objective, gradient, maxitr=1, control=control)
+    failed = ortho_optim(b, objective, gradient, maxitr=5, control=control)
+    assert not failed["converge"] and failed["itr"] == 1
+    assert_allclose(failed["B"], first["B"], atol=0, rtol=0)
+    assert failed["fn"] == first["fn"]
+    assert_allclose(failed["fn_Seq"], [first["fn"], 0., 0., 0., 0.], atol=0, rtol=0)
+
+
+def test_skew_gradient_along_column_rotations_is_not_stationary():
+    b = np.eye(2)
+    g = np.array([[0., -1.], [1., 0.]])
+    fit = ortho_optim(b, lambda b: np.sum(b * g), lambda b: g, maxitr=1)
+    assert fit["itr"] == 1 and not fit["converge"]
+    assert fit["fn"] < 0
+    assert_allclose(fit["B"].T @ fit["B"], np.eye(2), atol=1e-12)
+
+
 @pytest.mark.parametrize("value", [np.nan, np.inf, [1., 2.], True, 1 + 2j])
 def test_objective_validation(value):
     with pytest.raises(ValueError, match="fn must return"):

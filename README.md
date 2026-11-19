@@ -6,10 +6,10 @@ regression, right-censored survival outcomes, or personalized dose learning.
 [orthoDr R package](https://teazrq.github.io/orthoDr/) to NumPy. Fitting and
 prediction run without an R session.
 
-Source for the initial Python port, version 0.1.0, is available on
-[GitHub](https://github.com/teazrq/orthoDr-Python). It retains the pinned R
-source's C++ numerical routines and implements preprocessing, initializers,
-and prediction in Python. It is not yet a PyPI release. See
+Version **2.1.0** is available from
+[GitHub](https://github.com/teazrq/orthoDr-Python). It uses the R package's C++
+numerical routines and implements preprocessing, initializers, and prediction
+in Python. Install it from source using the instructions below. See
 [validation](VALIDATION.md) for the R comparison and its numerical limits.
 
 See the [Python documentation](https://teazrq.github.io/orthoDr-Python/) for
@@ -78,16 +78,24 @@ The basis describes a subspace: reversing a direction's sign does not change
 that subspace. An iteration limit can return a usable last estimate, but it
 does not establish convergence.
 
-Methods are `"sir"`, `"save"`, `"phd"`, `"local"`, and `"seff"`. Automatic
-starting directions use SIR, SAVE, and PHD. The one-direction LOCAL method fits
-three starts and selects by training kernel R-squared. That selection score is
-not an estimate of performance on new data.
+Methods are `"sir"`, `"save"`, `"phd"`, `"local"`, and `"seff"`. With one
+varying predictor, the default starting basis is `[[1]]` for every method.
+With multiple predictors, automatic starting directions use SIR, SAVE, and
+PHD. The one-direction LOCAL method fits three starts and selects by training
+kernel R-squared. That selection score is not an estimate of performance on
+new data.
 
-Automatic starts require full centered predictor rank and at least two
-observations in every SAVE response slice, including when fitting another
-method. Small samples may not support these slices. Supply a full-column-rank
-`B_initial` with shape `(X.shape[1], ndr)` to bypass the sliced initializers;
-training projections must still have positive variance.
+The regression methods use one pooled predictor scale for optimization. PHD
+uses centered outer products. SAVE retains its supplied-unit estimating
+equation. Supply new observations in the same coordinates used for training.
+
+Regression requires at least two observations and a varying response; a scalar
+predictor must also vary. Automatic starts with multiple predictors require
+full centered predictor rank and at least two observations in every SAVE
+response slice, including when fitting another method. Small samples may not
+support these slices. Supply a full-column-rank `B_initial` with shape
+`(X.shape[1], ndr)` to bypass the sliced initializers; training projections must
+still have positive variance.
 
 ## Survival outcomes
 
@@ -214,7 +222,9 @@ not guarantee better decisions. See the
 convergence fields and scaling conventions.
 
 Pseudo-direct learning uses `method="pseudo_direct"` to fit the reward surface
-before constructing a ridge dose rule. It now reports `gradient_norm` and
+before constructing a ridge dose rule. When several grid doses are tied for
+the highest estimated reward within numerical precision, the lowest becomes
+the training target. The fit reports `gradient_norm` and
 `stop_reason` for a reward-standardized mean squared error objective; `fn`
 remains raw reward RMSE. Only a small constrained gradient reports convergence.
 Its optional `intercept=True` adds an unbounded, unpenalized constant to the
@@ -248,12 +258,14 @@ Both analytic dose solvers run serially.
 
 ## Source and validation
 
-This development build includes the coordinated R/Python pseudo-direct and
-pSAVE corrections. Its native source is pinned to R source commit
-[`a9588d8`](https://github.com/teazrq/orthoDr/commit/a9588d8dd73c39188d1c46f371763addb10bee9a), based on orthoDr commit
+The native source uses R source commit
+[`a9588d8`](https://github.com/teazrq/orthoDr/commit/a9588d8dd73c39188d1c46f371763addb10bee9a) as its baseline, based on orthoDr commit
 [`d99bfa8`](https://github.com/teazrq/orthoDr/commit/d99bfa869ab211f974a7a045e8fa6ede23639a48).
-`tools/vendor_core.py` checks the pinned source fingerprints and records
-upstream and generated source hashes. The R-derived test fixtures include
+The current build adds a fingerprinted update from the R development source
+for regression, survival optimization, and dose fitting and prediction.
+`tools/vendor_core.py` checks the source
+and records the R and generated Python hashes in `src/cpp/provenance.json`.
+The R-derived test fixtures include
 their source revision, input arrays, fitted
 states, and predictions. The [fixture guide](tests/fixtures/README.md) explains
 how to obtain the reference source and regenerate them with the R development

@@ -1,4 +1,4 @@
-"""Numerical checks against the committed R source, not Python-generated truth.
+"""Numerical checks against the pinned R source and targeted R corrections.
 
 Regenerate fixtures with tools/generate_r_fixtures.R. Short solver runs check
 implementation parity; they do not establish statistical accuracy or convergence.
@@ -18,6 +18,15 @@ from orthodr import _core
 
 
 REFERENCE = json.loads((Path(__file__).parent / "fixtures" / "r_reference.json").read_text())
+CP_SIR_LEFT = json.loads((Path(__file__).parent / "fixtures" / "r_cp_sir_left.json").read_text())
+REGRESSION_SCALED = json.loads((Path(__file__).parent / "fixtures" / "r_regression_scaled.json").read_text())
+
+
+def _public_item(section, case):
+    item = REFERENCE[section][case]
+    cp_sir = CP_SIR_LEFT.get(section, {}).get(case, {})
+    regression = REGRESSION_SCALED.get(section, {}).get(case, {})
+    return dict(item, **cp_sir, **regression)
 
 
 def _arrays(value):
@@ -63,7 +72,7 @@ def _subspace(actual, expected, *, atol=2e-8):
 
 
 def _fit(section, case):
-    item = REFERENCE[section][case]
+    item = _public_item(section, case)
     kwargs = _arrays(item["input"])
     if "lambda" in kwargs:
         kwargs["lambda_init"] = kwargs.pop("lambda")
@@ -86,7 +95,7 @@ def _check_prediction_and_pickle(fit, item, label, *, atol=5e-6, rtol=3e-6):
 
 def test_fixture_provenance():
     assert REFERENCE["provenance"]["source_sha"] == "a9588d8dd73c39188d1c46f371763addb10bee9a"
-    assert _core.source_revision == REFERENCE["provenance"]["source_sha"]
+    assert _core.source_base_revision == REFERENCE["provenance"]["source_sha"]
     assert REFERENCE["provenance"]["seed"] == 20261116
 
 
@@ -223,13 +232,17 @@ def test_psave_subspace(case):
 @pytest.mark.parametrize("case", REFERENCE["initializers"]["CP_SIR"])
 def test_counting_process_sir_values_and_subspaces(case):
     data = _arrays(REFERENCE["initializers"]["CP_SIR"][case])
-    expected = data.pop("expected")
+    historical = data.pop("expected")
+    expected = _arrays(CP_SIR_LEFT["initializers"][case])
     result = orthodr.CP_SIR(**data)
     _numeric(result["values"], expected["values"], atol=2e-10, rtol=2e-9)
-    # Comparing the whole p-dimensional span would be vacuous. Check each
-    # identifiable leading subspace; a one-event matrix has rank at most one.
+    _numeric(result["values"], historical["values"], atol=2e-10, rtol=2e-9)
+    p = data["x"].shape[1]
+    assert result["vectors"].shape == (p, p)
+    _numeric(np.linalg.norm(result["vectors"], axis=0), np.ones(p), atol=2e-12, rtol=0)
+    # Only proper leading subspaces carry information about the directions.
     rank = np.count_nonzero(expected["values"] > np.max(expected["values"]) * 1e-10)
-    for d in range(1, rank + 1):
+    for d in range(1, min(rank, p - 1) + 1):
         _subspace(result["vectors"][:, :d], expected["vectors"][:, :d], atol=2e-8)
 
 
@@ -248,7 +261,7 @@ def test_hmave_subspace_cv_and_vector_column_equivalence(case):
 
 @pytest.mark.parametrize("case", REFERENCE["default_fits"])
 def test_complete_fit_with_default_initialization(case):
-    item = REFERENCE["default_fits"][case]
+    item = _public_item("default_fits", case)
     kwargs = _arrays(item["input"])
     if "lambda" in kwargs:
         kwargs["lambda_init"] = kwargs.pop("lambda")
@@ -259,8 +272,31 @@ def test_complete_fit_with_default_initialization(case):
     expected = dict(item["expected"])
     expected.pop("B")
     _state(fit, expected, atol=3e-6, rtol=3e-5, label=case)
-    _subspace(fit.B, item["expected"]["B"], atol=3e-6)
-    _check_prediction_and_pickle(fit, item, case)
+    if case == "surv_dm":
+        # See the R-only start perturbations saved with this seven-step fit.
+        _subspace(fit.B, item["expected"]["B"], atol=3e-4)
+        _check_prediction_and_pickle(fit, item, case, atol=5e-4, rtol=0)
+    else:
+        _subspace(fit.B, item["expected"]["B"], atol=3e-6)
+        _check_prediction_and_pickle(fit, item, case)
+
+
+def test_automatic_martingale_first_step_and_fixed_r_state_prediction():
+    from orthodr.models import FitResult
+
+    item = _public_item("default_fits", "surv_dm")
+    first_step = dict(item, **CP_SIR_LEFT["martingale_first_step"])
+    kwargs = _arrays(dict(item["input"], maxitr=1))
+    fit = orthodr.orthoDr_surv(**kwargs, keep_data=True)
+    expected = _arrays(first_step["expected"])
+    _subspace(fit.B, expected.pop("B"), atol=2e-8)
+    _state(fit, expected, atol=2e-10, rtol=2e-9, label="martingale first step")
+    _check_prediction_and_pickle(fit, first_step, "martingale first step", atol=2e-8, rtol=2e-8)
+
+    fixed = FitResult(_arrays(item["expected"]))
+    fixed["kind"] = "surv"
+    fixed.update({key: kwargs[key] for key in ("x", "y", "censor")})
+    _check_prediction_and_pickle(fixed, item, "martingale fixed state", atol=2e-12, rtol=2e-12)
 
 
 @pytest.mark.parametrize("case", REFERENCE["optim"])
@@ -277,8 +313,13 @@ def test_general_optimizer_analytic_numeric_max_min_and_both_branches(case):
         return sign * (A @ B)
 
     result = orthodr.ortho_optim(**data, fn=fn, grad=grad if analytic else None)
-    _state(result, REFERENCE["optim"][case]["expected"], atol=2e-6,
-           rtol=2e-6, label=case)
+    # Central differences of the quadratic objective recover its analytic
+    # gradient. Compare both variants to the exact-gradient R trajectory.
+    analytic_case = case.replace("_numeric_", "_analytic_")
+    expected = dict(REFERENCE["optim"][analytic_case]["expected"])
+    if not analytic:
+        expected["method"] = "approx. gradient"
+    _state(result, expected, atol=2e-6, rtol=2e-6, label=case)
     _numeric(result["B"].T @ result["B"], np.eye(result["B"].shape[1]), atol=2e-12, rtol=0)
 
 
@@ -291,6 +332,39 @@ def test_native_survival_first_step_from_exact_r_preprocessing(case):
     solver = getattr(_core, "surv_" + item["input"]["method"] + "_solver")
     fit = solver(**kwargs, **item["input"]["control"], maxitr=1, verbose=0, ncore=1)
     _state(fit, item["native_trajectory"][0], atol=2e-11, rtol=2e-10, label=case)
+
+
+@pytest.mark.parametrize("method", ["forward", "dn", "dm"])
+def test_failed_native_survival_search_preserves_the_initial_fit(method):
+    item = REFERENCE["survival"][method + "_ties"]
+    kwargs = _arrays(item["prepared"])
+    kwargs.pop("Y")
+    if method == "forward":
+        kwargs.pop("Phit")
+    solver = getattr(_core, "surv_" + method + "_solver")
+    control = item["input"]["control"]
+    start = solver(**kwargs, **control, maxitr=0, verbose=0, ncore=1)
+    failed = solver(**kwargs, **dict(control, rho=1e40), maxitr=8, verbose=0, ncore=1)
+    assert not failed["converge"] and failed["itr"] == 0
+    assert_allclose(failed["B"], kwargs["B"], atol=0, rtol=0)
+    assert failed["fn"] == start["fn"]
+
+
+def test_failed_shared_regression_search_preserves_the_initial_fit():
+    from orthodr._utils import gram_schmidt
+
+    item = REFERENCE["regression"]["local_d1"]
+    data = _arrays(item["input"])
+    b = gram_schmidt(data["B_initial"])
+    args = b, data["x"], np.asarray(item["scaled_y"]), data["bw"]
+    control = data["control"]
+    start = _core.local_solver(*args, **dict(control, gtol=1e100),
+                               maxitr=8, verbose=0, ncore=1)
+    failed = _core.local_solver(*args, **dict(control, rho=1e40),
+                                maxitr=8, verbose=0, ncore=1)
+    assert not failed["converge"] and failed["itr"] == 0
+    assert_allclose(failed["B"], b, atol=0, rtol=0)
+    assert failed["fn"] == start["fn"]
 
 
 @pytest.mark.parametrize("section,case", [
@@ -312,7 +386,7 @@ def test_prediction_arithmetic_from_fixed_r_state(section, case):
 
 @pytest.mark.parametrize("case", REFERENCE["stationary_fits"])
 def test_stationary_full_fit_objective_subspace_prediction_and_residual(case):
-    item = REFERENCE["stationary_fits"][case]
+    item = _public_item("stationary_fits", case)
     kwargs = _arrays(item["input"])
     function = orthodr.orthoDr_reg if item["family"] == "regression" else orthodr.orthoDr_surv
     fit = function(**kwargs, keep_data=True)
@@ -324,7 +398,10 @@ def test_stationary_full_fit_objective_subspace_prediction_and_residual(case):
     if item["family"] == "regression":
         x, y = kwargs["x"], kwargs["y"]
         Y = ((y - y.mean()) / y.std(ddof=1) / len(y) ** (-1 / 6) / np.sqrt(2))[:, None]
-        objective = lambda B: _core.sir_init(B, x, Y, kwargs["bw"], 1)
+        centered = x - x.mean(axis=0)
+        scale = np.sqrt(np.sum(centered**2) / ((len(x) - 1) * x.shape[1]))
+        objective = lambda B: _core.sir_init(B, centered / scale, Y, kwargs["bw"], 1)
+        expected_fn = item["expected"]["fn"] / scale**4
         bases = [fit.B, np.asarray(item["expected"]["B"])]
     else:
         prep = _arrays(REFERENCE["survival"]["forward_ties"]["prepared"])
@@ -333,8 +410,9 @@ def test_stationary_full_fit_objective_subspace_prediction_and_residual(case):
         scale = kwargs["x"].std(axis=0, ddof=1)[:, None]
         bases = [np.asarray(B) * scale for B in (fit.B, item["expected"]["B"])]
         bases = [B / np.linalg.norm(B, axis=0) for B in bases]
+        expected_fn = item["expected"]["fn"]
     for B in bases:
-        _numeric(objective(B), item["expected"]["fn"], atol=2e-10, rtol=2e-8)
+        _numeric(objective(B), expected_fn, atol=2e-10, rtol=2e-8)
         gradient = np.zeros_like(B)
         for i in range(B.shape[0]):
             plus, minus = B.copy(), B.copy()

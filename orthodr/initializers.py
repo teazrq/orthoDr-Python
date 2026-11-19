@@ -2,7 +2,7 @@
 
 The slice construction and local SIR, SAVE, PHD, and grouped SAVE moments
 follow the R ``dr`` dependency. pSAVE pools its group moments in one common
-coordinate system. CP-SIR and hMAVE follow the committed orthoDr source.
+coordinate system. hMAVE follows the committed orthoDr source.
 """
 
 from __future__ import annotations
@@ -11,8 +11,9 @@ import numpy as np
 from scipy.linalg import eigh, qr, solve_triangular
 from scipy.special import ndtr
 
-from ._utils import (gram_schmidt, numeric_matrix, numeric_vector,
-                     positive_integer, silverman)
+from ._utils import (check_survival_rank, gram_schmidt, numeric_matrix, numeric_vector,
+                     positive_integer, silverman, survival_coordinates, raw_predictor_directions,
+                     survival_status, survival_times)
 
 
 def _centered_rank(x):
@@ -124,10 +125,16 @@ def regression_initializers(x, y, nslices=None):
             for method in ("sir", "save", "phd")}
 
 
+def _psave_centered_rank(x):
+    # Subtract an observed row first so constant columns have exact zero residuals.
+    return _centered_rank(x - x[0])
+
+
 def _psave_group_moment(x, y, nslices):
     """Population local SAVE moment, with tiny-slice mass kept separate."""
     n, p = x.shape
-    centered = x - np.mean(x, axis=0)
+    differences = x - x[0]
+    centered = differences - np.mean(differences, axis=0)
     covariance = centered.T @ centered / n
     inverse = _symmetric_inverse_sqrt(covariance, "dose group covariance")
     z = centered @ inverse
@@ -178,8 +185,10 @@ def pSAVE(x, a, r, ndr=2, nslices0=2):
     rank. The p=1 result is exactly ``[[1.0]]`` after input validation.
 
     Local symmetric-whitened SAVE moments use population covariances and
-    are transported to raw coefficient coordinates group by group. Their
-    eigenproblem uses the group-size-weighted within-group covariance as
+    are transported to shared predictor coefficient coordinates group by
+    group. Using the same per-predictor scales across groups improves
+    whitening when their units differ greatly. The eigenproblem uses the
+    group-size-weighted within-group covariance as
     a common reference. Slices smaller than three contribute a scalar
     identity only in those common coordinates, preserving their lack of
     directional information without renormalizing informative slice weights.
@@ -191,16 +200,28 @@ def pSAVE(x, a, r, ndr=2, nslices0=2):
     boundary is separated and numerical admissibility is unchanged. This
     coordinate correction changes historical output; statistical recovery
     still requires suitable SAVE identification assumptions.
+
+    For partial sufficient dimension reduction, see Feng, Wen, Yu and Zhu
+    (2013), https://doi.org/10.1080/01621459.2012.746065.
     """
     x = numeric_matrix(x, min_rows=2)
     n, p = x.shape
     a, r = numeric_vector(a, "a", n=n), numeric_vector(r, "r", n=n)
     ndr = positive_integer(ndr, "ndr", p)
     nslices0 = positive_integer(nslices0, "nslices0")
-    if _centered_rank(x) < p:
-        raise ValueError("pSAVE requires full centred predictor rank; supply B_initial to orthoDr_pdose")
-    if p == 1:
+    if p == 1 and np.any(x[:, 0] != x[0, 0]):
         return np.ones((1, 1))
+
+    # Use the same predictor scales for all groups and the pooled reference.
+    with np.errstate(over="ignore"):
+        x = x - x[0]
+    scales = np.max(np.abs(x), axis=0)
+    rank_error = "pSAVE requires full centred predictor rank; supply B_initial to orthoDr_pdose"
+    if np.any(~np.isfinite(scales)) or np.any(scales == 0):
+        raise ValueError(rank_error)
+    x /= scales
+    if _psave_centered_rank(x) != p:
+        raise ValueError(rank_error)
     start, stop = max(1, int(np.floor(n / 2 - 50))), min(n, int(np.floor(n / 2 + 50)))
     thresholds = np.sort(a)[start - 1:stop]
     threshold_moments = []
@@ -208,7 +229,7 @@ def pSAVE(x, a, r, ndr=2, nslices0=2):
     for cut in thresholds:
         group = a <= cut
         selections = [group == g for g in np.unique(group)]
-        if not all(np.sum(sel) >= p + 1 and _centered_rank(x[sel]) == p
+        if not all(np.sum(sel) >= p + 1 and _psave_centered_rank(x[sel]) == p
                    for sel in selections):
             continue
         local = _grouped_save_moment(x, r, group, nslices0)
@@ -234,21 +255,29 @@ def pSAVE(x, a, r, ndr=2, nslices0=2):
     common = root @ raw_moment @ root
     # The omitted total fallback mass multiplies I and changes no directions.
     _, vectors = eigh((common + common.T) / 2)
-    directions = inverse @ vectors[:, ::-1][:, :ndr]
-    directions /= np.linalg.norm(directions, axis=0)
+    working_directions = inverse @ vectors[:, ::-1][:, :ndr]
+    directions = raw_predictor_directions(working_directions, scales)
     pivots = np.argmax(np.abs(directions), axis=0)
     directions *= np.where(directions[pivots, np.arange(ndr)] < 0, -1.0, 1.0)
     return directions
 
 
 def CP_SIR(x, y, censor, bw=None):
-    """Counting-process SIR with tie-aware event neighborhoods."""
+    """Counting-process SIR with tie-aware event neighborhoods.
+
+    Supply 0 for censoring and 1 for an event, or equivalent Boolean indicators.
+    Returns ``values``, the singular values in decreasing order, and
+    ``vectors``, the corresponding left singular directions mapped back
+    to the original predictor coordinates and normalized to unit length.
+    Under the CP-SIR risk-set assumptions and sufficient rank, the
+    population moment's column space gives the failure subspace after
+    this transformation. Smoothing across event times can mix
+    censoring directions into the row space.
+    """
     x = numeric_matrix(x, min_rows=2)
     n, p = x.shape
-    y = numeric_vector(y, "y", n=n)
-    censor = numeric_vector(censor, "censor", n=n, allow_bool=True)
-    if not np.all(np.isin(censor, [0, 1])):
-        raise ValueError("censor can only have two levels 0/1")
+    y = survival_times(y, n)
+    censor = survival_status(censor, n)
     event = censor == 1
     n_fail = int(np.sum(event))
     if not n_fail:
@@ -258,10 +287,11 @@ def CP_SIR(x, y, censor, bw=None):
     b = np.asarray(bw)
     if b.ndim != 0 or b.dtype.kind not in "iuf" or not np.isfinite(b) or b <= 0:
         raise ValueError("bw must be positive and finite")
-    xc = x - np.mean(x, axis=0)
-    covariance = xc.T @ xc / (n - 1)
-    inverse_sqrt = _symmetric_inverse_sqrt(covariance, "CP_SIR feature covariance")
-    standardized = xc @ inverse_sqrt
+    xc, scale = survival_coordinates(x)
+    _, singular, vt = np.linalg.svd(xc, full_matrices=False)
+    check_survival_rank(singular, xc.shape)
+    whitener = (vt.T * (np.sqrt(n - 1) / singular)) @ vt
+    standardized = xc @ whitener
     fail_indices = np.flatnonzero(event)
     ordered = fail_indices[np.argsort(y[event], kind="stable")]
     timepoints = y[ordered]
@@ -278,9 +308,8 @@ def CP_SIR(x, y, censor, bw=None):
         gu[i] = np.mean(standardized[failure], axis=0)
         gu_risk[i] = np.mean(standardized[risk], axis=0)
     matrix = (standardized[ordered] - gu_risk).T @ (gu - gu_risk)
-    _, values, vt = np.linalg.svd(matrix, full_matrices=True)
-    directions = inverse_sqrt @ vt.T
-    directions /= np.linalg.norm(directions, axis=0)
+    left, values, _ = np.linalg.svd(matrix, full_matrices=True)
+    directions = raw_predictor_directions(whitener @ left, scale)
     return dict(values=values, vectors=directions)
 
 
@@ -291,6 +320,9 @@ def hMave(x, y, censor, m0, B0=None):
     kernel score. The score sums squared errors in predicting Gaussian
     event-time-kernel values among observed events. Vector and one-column
     y/censor inputs are equivalent.
+
+    For the hazard MAVE method, see Xia, Zhang and Xu (2010),
+    https://doi.org/10.1198/jasa.2009.tm09372.
     """
     x = numeric_matrix(x, min_rows=3)
     n, p = x.shape
