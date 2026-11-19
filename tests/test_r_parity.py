@@ -99,9 +99,61 @@ def test_fixture_provenance():
     assert REFERENCE["provenance"]["seed"] == 20261116
 
 
+def _local_objective_and_prediction(B, x, y, new_x, bw):
+    n, d = len(x), B.shape[1]
+    center = x.mean(axis=0)
+    x = x - center
+    u = x @ B
+    scale = u.std(axis=0, ddof=1) * bw * np.sqrt(2)
+    u = u / scale
+    y_scaled = (y - y.mean()) / y.std(ddof=1) / n**(-1 / (d + 5)) / np.sqrt(2)
+    delta = u[None, :, :] - u[:, None, :]
+    weights = np.exp(-np.sum(delta**2, axis=2))
+    mean_x = weights @ x / weights.sum(axis=1, keepdims=True)
+    local_coefficients = []
+    for offsets, root_weights in zip(delta, np.sqrt(weights)):
+        design = np.column_stack((np.ones(n), offsets))
+        coefficients, *_ = np.linalg.lstsq(design * root_weights[:, None],
+                                           y_scaled * root_weights, rcond=None)
+        local_coefficients.append(coefficients)
+    coefficients = np.asarray(local_coefficients)
+    residual = y_scaled - coefficients[:, 0]
+    equation = ((x - mean_x) * residual[:, None]).T @ coefficients[:, 1:] / n
+
+    new_u = (new_x - center) @ B / scale
+    prediction_weights = np.exp(-np.sum((new_u[:, None, :] - u[None, :, :])**2, axis=2))
+    prediction = prediction_weights @ y / prediction_weights.sum(axis=1)
+    return np.sum(equation**2), prediction
+
+
 @pytest.mark.parametrize("case", REFERENCE["regression"])
 def test_regression_last_state_and_predictions(case):
     fit, item = _fit("regression", case)
+    if case == "local_d2":
+        # R starts perturbed by 1e-15 have pairwise spreads of 1.96e-5 in B,
+        # 1.06e-5 in its projector, 9.31e-6 in predictions, and 5.38e-10 in fn
+        # after seven unfinished updates. Verify each state's equations below.
+        expected = dict(item["expected"])
+        reference_basis = np.asarray(expected.pop("B"))
+        reference_objective = expected.pop("fn")
+        _state(fit, expected, atol=0, rtol=1e-14, label=case)
+        _numeric(fit.B, reference_basis, atol=2e-5, rtol=0, label=case + ".B")
+        _numeric(fit.fn, reference_objective, atol=6e-10, rtol=0, label=case + ".fn")
+        _numeric(fit.B.T @ fit.B, np.eye(2), atol=2e-12, rtol=0)
+        _subspace(fit.B, reference_basis, atol=1.1e-5)
+        _check_prediction_and_pickle(fit, item, case, atol=1e-5, rtol=0)
+
+        data = _arrays(item["input"])
+        new_x = np.asarray(item["testx"])
+        for basis, objective, prediction in (
+            (fit.B, fit.fn, fit.predict(new_x)),
+            (reference_basis, reference_objective, item["prediction"]["pred"]),
+        ):
+            objective_check, prediction_check = _local_objective_and_prediction(
+                basis, data["x"], data["y"], new_x, data["bw"])
+            _numeric(objective, objective_check, atol=2e-13, rtol=0)
+            _numeric(prediction, prediction_check, atol=2e-12, rtol=0)
+        return
     # Shared numerical differentiation can accumulate cross-BLAS rounding;
     # this still constrains both coordinates and objective after seven steps.
     _state(fit, item["expected"], atol=2e-6, rtol=2e-5, label=case)

@@ -22,6 +22,8 @@ Analytic gradients reduce the earlier pseudo-direct trajectory discrepancy, but 
 
 Inherited SIR finite differences are sensitive even over five updates: the first Ubuntu runs differed from the saved basis by `1.03e-7`, while R-only starting perturbations of `1e-15` produced basis differences of `1.40e-7` and objective differences of `1.08e-9`. That state is unfinished, with constrained residual about `0.00758`. Fixed-state objective and prediction checks remain strict. The [extended numerical audit](tests/fixtures/extended-audit.md) records the comparison.
 
+In the unfinished seven-update two-direction LOCAL fit, Ubuntu Python 3.10 differed from the R fixture by `1.26e-5` in the basis. Using the basis printed in CI gives differences of `6.78e-6` in the subspace projector, `5.97e-6` in held-out predictions, and `3.40e-10` in the objective. Across all R-only sign perturbations of size `1e-15` in the starting coefficients, the largest pairwise differences were `1.96e-5`, `1.06e-5`, `9.31e-6`, and `5.38e-10`, respectively. The projected gradient norm was about `4.01e-4` at the saved R and CI states. The test bounds this trajectory variation for this case and independently checks the LOCAL objective and Gaussian predictions at each fitted basis.
+
 ## Convergence and compatibility
 
 Pseudo-direct `converge=True` now requires the normalized constrained gradient tolerance. Five accepted updates with small average parameter and objective changes can instead report `stagnation`, with `converge=False`. The returned `fn` remains reward RMSE in its original units. Direct learning retains its joint policy/direction criterion. Regression and survival retain their previous small-change stopping rules.
