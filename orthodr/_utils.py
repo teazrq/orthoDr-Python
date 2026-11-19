@@ -10,8 +10,20 @@ from scipy.linalg import qr
 from scipy.spatial.distance import cdist
 
 
+def _reject_mask(x, name):
+    mask = np.ma.getmask(x)
+    if mask is np.ma.nomask or not np.any(mask):
+        return
+    indices = np.argwhere(mask)
+    shown = ", ".join("(" + ", ".join(map(str, idx)) + ")" for idx in indices[:8])
+    if len(indices) > 8:
+        shown += f" and {len(indices) - 8} more"
+    raise ValueError(f"{name} contains masked values at 0-based indices {shown}.")
+
+
 def numeric_matrix(x, name="x", min_rows=1, min_cols=1):
     """Return a finite, real two-dimensional floating point array."""
+    _reject_mask(x, name)
     a = np.asarray(x)
     if a.ndim != 2 or a.dtype.kind not in "iuf":
         raise ValueError(f"{name} must be a real numeric matrix")
@@ -25,6 +37,7 @@ def numeric_matrix(x, name="x", min_rows=1, min_cols=1):
 
 def numeric_vector(x, name="y", n=None, allow_bool=False, allow_column=False):
     """Validate a numeric observation vector, optionally accepting one column."""
+    _reject_mask(x, name)
     a = np.asarray(x)
     if allow_column and a.ndim == 2 and a.shape[1] == 1:
         a = a[:, 0]
@@ -37,6 +50,95 @@ def numeric_vector(x, name="y", n=None, allow_bool=False, allow_column=False):
     if not np.all(np.isfinite(a)):
         raise ValueError(f"{name} must be a finite numeric vector")
     return a
+
+
+def survival_times(times, n, name="y"):
+    """Validate survival times, including missing observations masked by NumPy."""
+    mask = np.ma.getmask(times)
+    values = np.asarray(times)
+    if values.ndim != 1 or values.dtype.kind not in "iuf":
+        raise ValueError(f"{name} must be a finite numeric vector")
+    if len(values) != n:
+        raise ValueError(f"{name} must have one value per observation")
+    # Ranking and risk sets use the original precision. Consecutive int64
+    # timestamps can round to the same float even though both are finite.
+    invalid = np.flatnonzero(mask | ~np.isfinite(values))
+    if invalid.size:
+        rows = ", ".join(str(row) for row in invalid[:8])
+        if invalid.size > 8:
+            rows += f" and {invalid.size - 8} more"
+        raise ValueError(f"{name} must contain finite times. Invalid at 0-based observation rows {rows}.")
+    return values
+
+
+def survival_coordinates(x):
+    """Center observed differences and equilibrate predictor units before testing rank."""
+    with np.errstate(over="ignore"):
+        delta = x - x[0]
+    span = np.max(np.abs(delta), axis=0)
+    if np.any(span == 0):
+        cols = ", ".join(map(str, np.flatnonzero(span == 0)))
+        raise ValueError(f"Constant predictor at 0-based columns {cols}. Each predictor must have positive sample variance.")
+    if not np.isfinite(span).all():
+        raise ValueError("Predictor differences exceed the numeric range. Rescale x.")
+    relative = delta / span
+    centered = relative - relative.mean(axis=0)
+    sd_relative = np.sqrt(np.sum(centered**2, axis=0) / (len(x) - 1))
+    scale = span * sd_relative
+    if np.any(~np.isfinite(scale) | (scale == 0)):
+        raise ValueError("Predictor scales exceed the numeric range. Rescale x.")
+    return centered / sd_relative, scale
+
+
+def check_survival_rank(singular, shape):
+    tol = max(shape) * np.finfo(float).eps * singular[0]
+    if len(singular) < shape[1] or np.any(singular <= tol):
+        raise ValueError("Survival fitting requires full centered predictor rank (a positive definite feature covariance). Remove redundant predictors.")
+
+
+def raw_predictor_directions(b, scale):
+    message = "Cannot express the fitted direction in the supplied predictor units. Rescale x."
+    peak = np.max(np.abs(b), axis=0)
+    if np.any(~np.isfinite(peak) | (peak == 0)):
+        raise ValueError(message)
+    with np.errstate(over="ignore", under="ignore", divide="ignore"):
+        raw = b / scale[:, None]
+        largest = np.max(np.abs(raw), axis=0)
+        bad = ~np.isfinite(largest) | (largest == 0)
+        if np.any(bad):
+            mag = np.log(np.abs(b[:, bad])) - np.log(scale[:, None])
+            raw[:, bad] = np.sign(b[:, bad]) * np.exp(mag - mag.max(axis=0))
+        raw /= np.max(np.abs(raw), axis=0)
+        raw /= np.linalg.norm(raw, axis=0)
+        # Reject a unit vector that has lost a resolved component through underflow.
+        mag = np.log(np.abs(raw)) + np.log(scale[:, None])
+        restored = np.sign(raw) * np.exp(mag - mag.max(axis=0))
+    if np.max(np.abs(restored - b / peak)) > np.sqrt(np.finfo(float).eps):
+        raise ValueError(message)
+    return raw
+
+
+def survival_status(censor, n):
+    """Validate one binary event indicator per observation."""
+    coding = "Use 0 for right censoring and 1 for an observed event."
+    vector_error = f"censor must be a one-dimensional numeric or Boolean vector. {coding}"
+    try:
+        status = np.asarray(censor)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(vector_error) from exc
+    if status.ndim != 1 or status.dtype.kind not in "iufb":
+        raise ValueError(vector_error)
+    if len(status) != n:
+        raise ValueError(f"censor must have one value per observation (expected {n}, got {len(status)}). {coding}")
+    _reject_mask(censor, "censor (0/1 event indicator)")
+    invalid = np.flatnonzero((status != 0) & (status != 1))
+    if invalid.size:
+        examples = ", ".join(f"{i}={status[i].item()!r}" for i in invalid[:5])
+        if invalid.size > 5:
+            examples += f" and {invalid.size - 5} more"
+        raise ValueError(f"censor must contain 0/1 indicators. {coding} "
+                         f"Invalid values by 0-based row index (index=value) are {examples}.")
+    return status.astype(float, copy=False)
 
 
 def positive_integer(value, name, maximum=None):
@@ -121,21 +223,30 @@ def kernel_weight(x1, x2, kernel="gaussian", dist="euclidean"):
 
 
 def _basis(x, name):
-    a = np.asarray(x)
+    a = np.asanyarray(x)
     if a.ndim == 1:
         a = a[:, None]
     a = numeric_matrix(a, name)
+    peak = np.max(np.abs(a), axis=0)
+    if np.any(peak == 0):
+        raise ValueError(f"{name} must have full column rank")
+    a = a / peak
     if np.linalg.matrix_rank(a) != a.shape[1]:
         raise ValueError(f"{name} must have full column rank")
     return a
 
 
 def distance(s1, s2, type="dist", x=None):
-    """Compare subspaces using the four metrics in the original R package.
+    """Compare subspaces as in the original R package.
 
-    ``trace`` and ``canonical`` are similarities. ``sine`` retains R's
-    square-root sum of squared eigenvalues of P1(I-P2), which differs from
-    the more usual square-root sum of squared principal-angle sines.
+    ``dist`` gives a metric, the Frobenius distance between projection matrices.
+    ``trace`` and ``canonical`` are similarities. For equal dimensions,
+    ``sine`` returns the square root of the sum of fourth powers of the
+    principal-angle sines. For unequal dimensions it adds any excess of the
+    first subspace's dimension over the second's before taking the square
+    root. A line in a plane gives 0 with the line first and 1 with the plane
+    first. The sine discrepancy can violate the triangle inequality even at
+    equal dimensions.
     """
     s1, s2 = _basis(s1, "s1"), _basis(s2, "s2")
     if s1.shape[0] != s2.shape[0]:
@@ -154,7 +265,7 @@ def distance(s1, s2, type="dist", x=None):
             raise ValueError("Dimension of x is not correct")
         # cancor(..., xcenter=FALSE, ycenter=FALSE) uses the uncentered QR
         # bases; rank-deficient projected data retain only nonzero directions.
-        u, v = x @ s1, x @ s2
+        u, v = x @ q1, x @ q2
         qu, _, _ = qr(u, mode="economic", pivoting=True)
         qv, _, _ = qr(v, mode="economic", pivoting=True)
         ru, rv = np.linalg.matrix_rank(u), np.linalg.matrix_rank(v)

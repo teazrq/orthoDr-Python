@@ -1,6 +1,6 @@
 {
   "upstream": "https://github.com/teazrq/orthoDr",
-  "revision": "a9588d8dd73c39188d1c46f371763addb10bee9a",
+  "revision": "a9588d8dd73c39188d1c46f371763addb10bee9a+native.b522e6dc7fa725890d824dd0b5c04e03372ca9d8c865e595692ba51eaeb8ebe1",
   "license": "GPL-2.0-or-later",
   "source_hash_convention": "CRLF normalized to LF; all other bytes unchanged",
   "files": {
@@ -9,28 +9,28 @@
       "generated_sha256": "febc5c7d474b94575301e7bdfbe537e1b1c08bf8eb38a5828c4c5c941fb6852d"
     },
     "orthoDr_pdose.h": {
-      "source_sha256": "35f1ed87aebacfd4868b9d27797b054c5a7fc8b384a7e06753b6b3e48d6224f8",
-      "generated_sha256": "791c21ec7cfe9abc1229b1f46b22a991cfb99c3d0f1f0e481fe09455b5321bc2"
+      "source_sha256": "57329c53b6939c097fb9cf67a4dd1ee3613008455db8eedf74d9ec02a534afa2",
+      "generated_sha256": "aa2f2c7b103b4c174dad88b1489c942c5058d6b900a8e50549a2720712f74efa"
     },
     "orthoDr_reg.h": {
-      "source_sha256": "4d9e1335d3a6c65181dc86cf3bd1bf9bf79c0a7fa5dba9057f28c29a5ee52804",
-      "generated_sha256": "dc737fed975bc4cfcaee7b15735adb041b89d0a37a298d1388de58cfbf301515"
+      "source_sha256": "130114d0d0b8e8208533fb9d7c95f0685b77678e4629770e7f540785109e1d21",
+      "generated_sha256": "803a51b0cfb1072b7e68499547623b4d34683b2d0cd488f34f58435c618b5757"
     },
     "orthoDr_surv.h": {
       "source_sha256": "bca4e0f4a911cc94336e529e6194f0a0352ce1471d762a6c51c9a6e08008e8be",
       "generated_sha256": "bb531d0d09137be09552164679ed768f7634c294e629745a00f75e0b1010328b"
     },
     "pdose_direct_solver.cpp": {
-      "source_sha256": "023efcb22cd1aed6323f62159ceeb1e652c033adbbc1b70c7c0aa7096e87f8e3",
-      "generated_sha256": "53363f94e29b8e7bcac5409acb82e673ddae0447b62a52c71b124306a536e3a0"
+      "source_sha256": "195a5ba202ebbcf4799416e24728dda99db1eb615a174212fe41e2687e20a372",
+      "generated_sha256": "0ba84911b2acd0b3eb108b910b823a676211ea67544d84f7ac831dcb3fa79fa8"
     },
     "pdose_kernel_dose.cpp": {
-      "source_sha256": "beca0b537130699489a6a4bd6b50d80978bcc4e343c91612c4ee8f815e92e785",
-      "generated_sha256": "678e2076efb549390f37fb563dc3cf86424c8b8e47653fb1b55fe0188c1c094c"
+      "source_sha256": "4a2f62ee8a5822778d648975add6ec04f17cbce2ad40fc197bd94f5fec76dbeb",
+      "generated_sha256": "4571c070ace3a53f3b41d8ca3b24a995259b3a97171f987c47700fcf5486a46a"
     },
     "pdose_semi_solver.cpp": {
-      "source_sha256": "57914f642d683dc8a59e61dc62d4c1f2682ce0490ba076076627f14e4b80ecce",
-      "generated_sha256": "b06fe6bfcc85eb40a86faad0e18121dd12407123d8cf382ec82265c3d9201035"
+      "source_sha256": "c28f6259037cb38bd52deff2f9417dfb6e6a55c2f14fe65dfcbb620061b08de9",
+      "generated_sha256": "27d4bf63e487536196312c454fbc0e62ac774f8221078cb6c70c1cd5807469c8"
     },
     "reg_local_solver.cpp": {
       "source_sha256": "60913d65362f5cbc9afacfe66fb4fd5f27fd0182aca5ce3b5c9253babc939191",
@@ -40,37 +40,41 @@
       "source_sha256": "7a5208f4746d304806585a4f26e27a41133753adf00a4bf04b22b1fab1fcfd5a",
       "generated_sha256": "95bac39d685c0bd130b15e1952d933a2ba23eca1390d798462a475d02d10e766"
     },
+    "reg_projection.h": {
+      "source_sha256": "0bb388b42fdc70b2d278cd0125c7373713a2fd54086137dc8894df0c1b33c9d0",
+      "generated_sha256": "0bb388b42fdc70b2d278cd0125c7373713a2fd54086137dc8894df0c1b33c9d0"
+    },
     "reg_save_solver.cpp": {
-      "source_sha256": "7e7288aaa48e1c075b9b3db3d42f0a99f84e7966c8ff128ca82c1fc2504625fb",
-      "generated_sha256": "472294d53326aa56df2f15c3505247d613e196c35b239fcafe800be8f7c2febd"
+      "source_sha256": "96cccef7d62e25d152ca0aab327fb8d3e00b0b6f5d85730b85b4762d514661cb",
+      "generated_sha256": "d164888027171fd0d310bb302a2fbdf492039e2dcda6b4586c5662e8e5670784"
     },
     "reg_seff_solver.cpp": {
       "source_sha256": "16d99751f97eb0bd34e54a1f85de585cc4770e1b02f9a5377f2488b05e520650",
       "generated_sha256": "249b3e8b6e3f3019c875d4acf470190a79429425a3e1ab3b678b76928fa50bcc"
     },
     "reg_sir_solver.cpp": {
-      "source_sha256": "4da2195108edaf4e99bbb9235160b011cef4a66ebe559cbd9eea84bb36d2aeb3",
-      "generated_sha256": "6d4134a188d45483e54a1a5b59c05f3b4d06f79bfc51694b3d49450483ed3599"
+      "source_sha256": "4e851d825c3e0f6278811da044fa5cf577f52f917d0d32d41249693ed68601ed",
+      "generated_sha256": "985032cdf753cfc99f7f31abdc51865f21b24231f0e4ab9d43e239217ddac9cd"
     },
     "reg_solver_shared.cpp": {
-      "source_sha256": "22999fb732668d262be992bb807f436d4026a96197f2eb7629fac24202417800",
-      "generated_sha256": "2999fb43aff7f384efaeffa3012ea167dbf79c1ba5ed92ac9a1e46b13c16d048"
+      "source_sha256": "0ebe900993d8f97eeb91adb25729b2119ab5384e492890a628c8282144a12616",
+      "generated_sha256": "9a2077a9328aaa9ba6ff836a2c7017d700e7ac78b08e0f0959997388e05089f1"
     },
     "solver_numerics.h": {
-      "source_sha256": "ec4aea82c8843a9ef6fb888bb9744ff82d375bea32b7d4733830be6b9e9e8c5b",
-      "generated_sha256": "2380d2f293d86ed3dbf7721cb30436aafe31dd312232156ed4ef0b005c5dffc8"
+      "source_sha256": "b6d0ed0dc0eaff26ffaa0e009a47afcad47e206e01dc1f08b817465d89962c78",
+      "generated_sha256": "6cfa8f76b3140114c88fa219e469ebdb1c268fab88373d6635287df0af21f31a"
     },
     "surv_dm_solver.cpp": {
-      "source_sha256": "0dd1738b91a83b4d214cede759d6d5712811b3b2a47b6a900403aa83bee5a1bc",
-      "generated_sha256": "01b0cbc4b4c01641d2dba99d00ffb04c58f14e236945b5d58e59d9180288a3b6"
+      "source_sha256": "351fffac3653755d693fba0eeddef1774732b2e20122960a0b523729a5550f30",
+      "generated_sha256": "aaac9972483226a4e7ba661c28504c57a8ecbab590eadc84f8f17807e7ebaa08"
     },
     "surv_dn_solver.cpp": {
-      "source_sha256": "7566d8dabba02124242e70f963361d67e50ff70e575d215e30e314589dc5de93",
-      "generated_sha256": "f497b8964c3c2c41c3e099421cc4acc0296473582a306e15addb7cf352b9b72a"
+      "source_sha256": "b98030793069ab698b8bce419f968a14caaef02d329d554596923e595ba11129",
+      "generated_sha256": "3e26b9f7e417ba10c1eeb88fb46df9a43db0863c02d8a4f2e0800c49b3a3d797"
     },
     "surv_forward_solver.cpp": {
-      "source_sha256": "4f529289a21853e0f4ad646269e65c50ab05bf833d2bd9dcb37742cda3d87280",
-      "generated_sha256": "d1cb1bb41f0c902d9373b9122d4da35d3fa56fef6672e387290ab03db2985271"
+      "source_sha256": "5241386728324445afa0a0d3f41270bdf4f29b064af55ddd6c450acd1177292a",
+      "generated_sha256": "09c17f84530c4cf924c4ad4e86ec4d6b18252698282f1970d72f10ffffc998a5"
     },
     "utilities.cpp": {
       "source_sha256": "6ddb191bd5d1b63af7e30b46eb567219401f5aa8be30991fca6b0b06ec67980d",
@@ -80,5 +84,21 @@
       "source_sha256": "cbda667ebd80e47636ea7b081127c3f31e910b95076cce65ae12d6566b914063",
       "generated_sha256": "15be9472a4df25cd1a734c1f5ecd83ed882dca28e7115c5c4cad9ed49f3be0d6"
     }
-  }
+  },
+  "base_revision": "a9588d8dd73c39188d1c46f371763addb10bee9a",
+  "source_overlay": [
+    "orthoDr_pdose.h",
+    "orthoDr_reg.h",
+    "pdose_direct_solver.cpp",
+    "pdose_kernel_dose.cpp",
+    "pdose_semi_solver.cpp",
+    "reg_projection.h",
+    "reg_save_solver.cpp",
+    "reg_sir_solver.cpp",
+    "reg_solver_shared.cpp",
+    "solver_numerics.h",
+    "surv_dm_solver.cpp",
+    "surv_dn_solver.cpp",
+    "surv_forward_solver.cpp"
+  ]
 }

@@ -2,10 +2,10 @@
 import pickle
 from pathlib import Path
 import numpy as np
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 import pytest
 
-from orthodr import orthoDr_pdose
+from orthodr import _core, orthoDr_pdose
 
 
 @pytest.mark.parametrize("method", ["pseudo_direct", "direct", "direct_intercept"])
@@ -95,3 +95,41 @@ def test_positive_reward_affine_change_preserves_fixed_state():
         assert_allclose(changed.objective_scaled, f.objective_scaled, atol=1e-14)
         assert_allclose(changed.gradient_norm, f.gradient_norm, atol=1e-13)
         assert_allclose(changed.predict(x), f.predict(x), atol=2e-12)
+
+
+@pytest.mark.parametrize("optimum, winner", [(.5, 2), (.5 - 1e-12, 2), (.5 + 1e-12, 3)])
+def test_near_tie_dose_targets_and_predictions_across_patient_orders(optimum, winner):
+    z = np.tile([-1., 0., 1.], 12)
+    x = np.vstack(([2.**55, 2.**55], np.column_stack((z, np.zeros_like(z)))))
+    a = np.r_[.5, np.repeat(np.linspace(0, 1, 12), 3)]
+    r = -(a - np.r_[optimum, optimum + .4 * z])**2
+    start = np.array([[1.], [-1.]]) / np.sqrt(2)
+    grid = np.linspace(0, 1, 6)
+    query = np.array([[-1., 0.], [0., 0.], [1., 0.]])
+    rows = np.arange(len(x))
+    orders = (rows, np.roll(rows, -1), rows[::-1], np.random.default_rng(20261118).permutation(rows))
+    predictions, targets = [], []
+    for order in orders:
+        xx, aa, rr = x[order], a[order], r[order]
+        f = fit(xx, aa, rr, B_initial=start, ndr=1, K=6, bw=.5, maxitr=10, lambda_init=[.1])
+        state = _core.pdose_semi_evaluate(f.B, xx, rr, aa, .5, grid, np.array([.1]))
+        assert_allclose(f.W, state["W"], atol=2e-12, rtol=0)
+        assert f.lambda_init == state["lambda.init"]
+        assert_allclose(f.B, start, atol=2e-15, rtol=0)
+        assert_allclose(f.objective_scaled, 0.05039171448280783, atol=2e-15, rtol=0)
+        predictions.append(f.predict(query))
+        targets.append(state["grid.targets"].ravel()[np.argsort(order)])
+    assert_array_equal(np.asarray(targets), np.broadcast_to(targets[0], (len(orders), len(x))))
+    assert targets[0][0] == grid[winner]
+    assert_allclose(predictions, np.broadcast_to(predictions[0], (len(orders), len(query))),
+                    atol=2e-12, rtol=0)
+    expected_center = 0.3973103528891346 if winner == 2 else 0.5957761499978212
+    assert_allclose(predictions[0][1], expected_center, atol=2e-12, rtol=0)
+
+    # A binary scaling of the units preserves the numerical tie or distinct winner.
+    scaled = fit(x, 2 * a, 8 * r, B_initial=start, ndr=1, K=6, bw=.5,
+                 maxitr=10, lambda_init=[.1])
+    scaled_state = _core.pdose_semi_evaluate(scaled.B, x, 8 * r, 2 * a, .5,
+                                           2 * grid, np.array([.1]))
+    assert_array_equal(scaled_state["grid.targets"].ravel(), 2 * targets[0])
+    assert_allclose(scaled.predict(query), 2 * predictions[0], atol=2e-12, rtol=0)

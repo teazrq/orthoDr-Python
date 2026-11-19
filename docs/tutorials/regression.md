@@ -78,19 +78,32 @@ objectives; they are distinct from the sliced estimators used as starting
 values. See [Ma and Zhu's regression papers](../references.md#regression)
 for the semiparametric construction and efficient estimation.
 
-Automatic initialization computes SIR, SAVE, and residual-PHD candidates.
-Most configurations select the candidate with the smallest initial objective;
-two-direction fits also consider the leading SIR and SAVE directions jointly.
-One-direction LOCAL instead fits three starts and selects by training kernel
-R-squared. That score measures training fit, not held-out prediction error.
+SIR, PHD, LOCAL, and SEFF use one common predictor scale so that changing the
+units of all predictors together preserves their optimization objectives. PHD
+uses centered outer products. SAVE adjusts the scale of its objective for
+stopping and retains its supplied-unit equation, so changing units can still
+change its fitted directions. Supply new observations in the same coordinates
+used for training, including when you supply a starting basis.
+
+With one varying predictor and no supplied start, every method uses the scalar
+basis `[[1]]`. At least two observations and a varying response are required.
+The usual objective and solver still run; zero optimizer iterations are
+expected because the scalar basis has no continuous direction to optimize.
+
+With multiple predictors, automatic initialization computes SIR, SAVE, and
+residual-PHD candidates. Most configurations select the candidate with the
+smallest initial objective; two-direction fits also consider the leading SIR
+and SAVE directions jointly. One-direction LOCAL instead fits three starts
+and selects by training kernel R-squared. That score measures training fit,
+not held-out prediction error.
 
 ## Supply a starting basis when needed
 
-Automatic sliced initialization requires full centered predictor rank and at
-least two observations in every SAVE response slice. This requirement also
-applies to other regression methods because all three initializers are
-computed. A small sample or collinear predictors can prevent automatic
-initialization.
+For multiple predictors, automatic sliced initialization requires full centered
+predictor rank and at least two observations in every SAVE response slice.
+This requirement also applies to other regression methods because all three
+initializers are computed. A small sample or collinear predictors can prevent
+automatic initialization.
 
 Supply a full-column-rank matrix `B_initial` of shape `(p, ndr)` to bypass the
 sliced initializers. Its columns are orthonormalized before fitting, and

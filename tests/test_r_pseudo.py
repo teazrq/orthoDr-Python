@@ -1,15 +1,18 @@
 """Fixed-state R parity plus independent equations for revised pseudo-direct fits."""
 import json
+from math import fsum
 from pathlib import Path
 
 import numpy as np
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 import pytest
 
 from orthodr import _core
 
 
-REFERENCE = json.loads((Path(__file__).parent / "fixtures/r_pseudo.json").read_text())
+FIXTURES = Path(__file__).parent / "fixtures"
+REFERENCE = json.loads((FIXTURES / "r_pseudo.json").read_text())
+GRID_TIES = json.loads((FIXTURES / "r_pseudo_grid_ties.json").read_text())
 
 
 def _arrays(value):
@@ -21,6 +24,14 @@ def _arrays(value):
             return [_arrays(item) for item in value]
         return np.asarray(value, dtype=float)
     return value
+
+
+def _reference_case(case):
+    item = _arrays(REFERENCE["cases"][case])
+    if case == GRID_TIES["provenance"]["case"]:
+        item["expected"].update({key: _arrays(GRID_TIES["expected"][key])
+                                 for key in ("grid.targets", "W", "GCV")})
+    return item
 
 
 def _state(actual, expected, *, atol=3e-11, rtol=3e-10):
@@ -84,11 +95,17 @@ def _equations(data, B=None, selected_lambda=None):
     final_scale = dose_scale * data["dose_factor"]
     log_dose = -(a[:, None] - grid[None, :])**2 / (2 * final_scale**2)
     scores = np.empty((n, len(grid)))
+    radii = np.empty_like(scores)
     for i in range(n):
         joint = logk[:, i, None] + log_dose
         weights = np.exp(joint - joint.max(axis=0))
-        scores[i] = q @ weights / weights.sum(axis=0)
-    targets = grid[np.argmax(scores, axis=1)]
+        for j, w in enumerate(weights.T):
+            denominator = fsum(w)
+            products = q * w
+            scores[i, j] = fsum(products) / denominator
+            radii[i, j] = 4 * np.finfo(float).eps * (fsum(abs(products)) / denominator)
+    eligible = scores + radii >= (scores - radii).max(axis=1, keepdims=True)
+    targets = grid[np.argmax(eligible, axis=1)]
     kernel = np.exp(logk)
     ridge = []
     for penalty in np.atleast_1d(data["lambda"]):
@@ -134,18 +151,22 @@ def _equations(data, B=None, selected_lambda=None):
 
 @pytest.mark.parametrize("case", REFERENCE["cases"])
 def test_pseudo_fixed_r_state_complete_evaluation(case):
-    item = _arrays(REFERENCE["cases"][case])
+    item = _reference_case(case)
     if len(item["warnings"]):
         with pytest.warns(RuntimeWarning, match="Skipped unusable"):
             actual = _core.pdose_semi_evaluate(**item["input"])
     else:
         actual = _core.pdose_semi_evaluate(**item["input"])
     _state(actual, item["expected"])
+    assert_array_equal(actual["grid.targets"].ravel(), item["expected"]["grid.targets"].ravel())
+    if case == GRID_TIES["provenance"]["case"]:
+        fitted = actual["kernel"] @ actual["W"].ravel() + actual["intercept"]
+        assert_allclose(fitted, GRID_TIES["expected"]["training.predictions"], atol=3e-12, rtol=3e-12)
 
 
 @pytest.mark.parametrize("case", REFERENCE["cases"])
 def test_pseudo_independent_derivative_scores_ridge_and_cayley_equations(case):
-    item = _arrays(REFERENCE["cases"][case])
+    item = _reference_case(case)
     data, actual = item["input"], item["expected"]
     expected = _equations(data, selected_lambda=actual["lambda.init"])
     # Explicit smoother subtraction after a large dose shift loses digits;
@@ -222,3 +243,48 @@ def test_pseudo_constants_and_narrow_bandwidth_have_exact_contracts():
     assert narrow["gradient.norm"] == 0
     for case in ("bw_0.05", "bw_0.01", "bw_0.001"):
         assert np.isfinite(REFERENCE["cases"][case]["expected"]["grid.scores"]).all()
+
+
+@pytest.mark.parametrize("grid, winner", [([0., .5, 1.], 0.), ([1., .5, 0.], 1.),
+                                           ([1., .5, 1., 0.], 1.), ([.5], .5)])
+def test_private_grid_uses_first_supplied_eligible_position(grid, winner):
+    x = np.tile([-1., 0., 1.], 5)[:, None]
+    a = np.repeat(np.arange(5) / 4, 3)
+    r = (a - .5)**2
+    state = _core.pdose_semi_evaluate(np.ones((1, 1)), x, r, a, .5,
+                                     np.array(grid), np.array([.1]), True)
+    assert_array_equal(state["grid.targets"].ravel(), np.full(len(x), winner))
+    assert state["intercept"] == winner
+    assert_array_equal(state["W"], np.zeros_like(state["W"]))
+    scores = state["grid.scores"]
+    if len(grid) > 1:
+        # The endpoints are tied peaks with a substantially worse interior dose.
+        assert_allclose(scores[:, grid.index(0.)], scores[:, grid.index(1.)], atol=5e-16, rtol=0)
+        assert np.all(scores[:, grid.index(winner)] - scores[:, 1] > 1)
+    if len(grid) == 4:
+        assert_array_equal(scores[:, 0], scores[:, 2])
+
+
+def test_private_grid_retains_locally_resolvable_signal_near_zero():
+    x = np.array([[0.], [0.], [30.], [30.]])
+    a = np.array([0., 1., 0., 1.])
+    r = np.array([-1e-18, 1e-18, -1., 1.])
+    state = _core.pdose_semi_evaluate(np.ones((1, 1)), x, r, a, .03,
+                                     np.array([0., 1.]), np.array([.1]))
+    scores = state["grid.scores"][:2]
+    assert np.all((scores[:, 1] > scores[:, 0]) & (abs(scores).max(axis=1) < 1e-17))
+    assert_array_equal(state["grid.targets"].ravel(), np.ones(len(x)))
+
+
+@pytest.mark.parametrize("grid", [[0., 1., 2.], [0., 2., 1.]])
+def test_private_grid_compares_against_all_lower_endpoints(grid):
+    eps = np.finfo(float).eps
+    x = np.array([0.] * 6 + [10.])[:, None]
+    a = np.array([0., 0., 1., 1., 2., 2., 1.])
+    r = np.array([0., 0., 1., -1. + 4 * eps, eps, eps, -6 * eps])
+    state = _core.pdose_semi_evaluate(np.ones((1, 1)), x, r, a, .03,
+                                     np.array(grid), np.array([.1]))
+    # Dose 1 has the highest score and a broad interval from local cancellation.
+    # Dose 2 has a tighter interval that excludes dose 0, which overlaps dose 1.
+    assert grid[np.argmax(state["grid.scores"][0])] == 1.
+    assert_array_equal(state["grid.targets"].ravel()[:6], np.full(6, grid[1]))

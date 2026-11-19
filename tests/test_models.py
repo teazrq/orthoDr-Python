@@ -5,7 +5,8 @@ import numpy as np
 from numpy.testing import assert_allclose
 import pytest
 
-from orthodr import FitResult, orthoDr_pdose, orthoDr_reg, orthoDr_surv, predict
+from orthodr import (CP_SIR, FitResult, orthoDr_pdose, orthoDr_reg, orthoDr_surv,
+                     predict, view_dr_surv)
 
 
 def test_regression_prediction_matches_hand_weighted_mean():
@@ -20,6 +21,44 @@ def test_regression_prediction_matches_hand_weighted_mean():
         assert np.isnan(fit.predict(np.array([[1e8]]))[0])
 
 
+@pytest.mark.parametrize("ndr", [1, 2])
+@pytest.mark.parametrize("custom_start", [False, True])
+def test_seff_fit_and_prediction_are_invariant_to_predictor_translation(ndr, custom_start):
+    rng = np.random.default_rng(541)
+    # Dyadic observations and offsets make the centered training matrices
+    # bitwise equal. This checks the translation property without exciting
+    # unrelated finite-difference sensitivity to last-bit input differences.
+    x = rng.integers(-16, 17, size=(64, 4)) / 8
+    y = x[:, 0] + .6 * x[:, 1] ** 2 + rng.normal(scale=.3, size=len(x))
+    query = rng.integers(-16, 17, size=(7, 4)) / 8
+    shift = np.array([8., -4., 16., 2.])
+    basis = np.array([[1., .2], [.3, 1.], [-.4, .5], [.2, -.3]])[:, :ndr]
+    options = dict(method="seff", ndr=ndr, maxitr=7, bw=.7, keep_data=True,
+                   B_initial=basis if custom_start else None)
+    original_x, original_basis = x.copy(), basis.copy()
+    fit = orthoDr_reg(x, y, **options)
+    moved = orthoDr_reg(x + shift, y, **options)
+    assert_allclose(moved.B, fit.B, atol=0, rtol=0)
+    assert_allclose(moved.fn, fit.fn, atol=0, rtol=0)
+    assert moved.itr == fit.itr
+    assert moved.converge == fit.converge
+    assert np.isfinite(fit.fn)
+    assert_allclose(fit.B.T @ fit.B, np.eye(ndr), atol=2e-12, rtol=0)
+    predictions = fit.predict(query)
+    assert np.isfinite(predictions).all()
+    assert_allclose(moved.predict(query + shift), predictions, atol=2e-13, rtol=0)
+    # The public basis and retained predictors stay in the supplied coordinates.
+    assert_allclose(fit.x, x, atol=0, rtol=0)
+    assert_allclose(moved.x, x + shift, atol=0, rtol=0)
+    assert_allclose(moved.transform(query + shift), (query + shift) @ moved.B,
+                    atol=0, rtol=0)
+    restored = pickle.loads(pickle.dumps(moved))
+    assert_allclose(restored.predict(query + shift), moved.predict(query + shift),
+                    atol=0, rtol=0)
+    assert_allclose(x, original_x, atol=0, rtol=0)
+    assert_allclose(basis, original_basis, atol=0, rtol=0)
+
+
 def test_tied_survival_risk_set_matches_hand_kaplan_meier():
     # Projection values +/-1 give equal weights at zero. The censoring at
     # t=1 remains in that time's risk set: two of four fail, then one of one.
@@ -31,6 +70,52 @@ def test_tied_survival_risk_set_matches_hand_kaplan_meier():
     assert_allclose(result["surv"], [[.5], [.5], [0.]])
     empty = fit.predict(np.empty((0, 1)))
     assert empty["surv"].shape == (3, 0)
+
+
+@pytest.mark.parametrize("function", [orthoDr_surv, CP_SIR, view_dr_surv])
+def test_invalid_survival_status_reports_original_rows(function):
+    x = np.arange(7.).reshape(-1, 1)
+    y = np.array([6., 7., 2., 4., 1., 5., 3.])
+    censor = [1., 2., 0., .5, np.nan, np.inf, -1.]
+    with pytest.raises(ValueError, match="0/1 indicators") as error:
+        function(x, y, censor)
+    message = str(error.value)
+    assert "0 for right censoring and 1 for an observed event" in message
+    assert "0-based row index" in message
+    assert "1=2.0, 3=0.5, 4=nan, 5=inf, 6=-1.0" in message
+
+
+def test_survival_status_bounds_examples_and_validates_vector_inputs():
+    x = np.arange(10.).reshape(-1, 1)
+    y = np.arange(10.)
+    with pytest.raises(ValueError, match="0=2, 1=2, 2=2, 3=2, 4=2 and 5 more"):
+        CP_SIR(x, y, np.full(10, 2))
+    with pytest.raises(ValueError, match="one value per observation"):
+        CP_SIR(x, y, np.ones(9))
+    for censor in (np.ones((10, 1)), ["1"] * 10):
+        with pytest.raises(ValueError, match="one-dimensional numeric or Boolean vector"):
+            CP_SIR(x, y, censor)
+
+
+@pytest.mark.parametrize("function", [orthoDr_surv, CP_SIR])
+def test_survival_estimators_require_an_event(function):
+    x = np.arange(6.).reshape(-1, 1)
+    with pytest.raises(ValueError, match="at least one .*event"):
+        function(x, np.arange(6.), np.zeros(6, dtype=bool))
+
+
+def test_retained_survival_predictions_validate_stored_status():
+    x = np.arange(1., 7.).reshape(-1, 1)
+    censor = np.array([True, False, True, True, False, True])
+    fit = orthoDr_surv(x, x[:, 0][::-1], censor, keep_data=True, maxitr=0)
+    restored = pickle.loads(pickle.dumps(fit))
+    assert_allclose(restored.predict(x[:1])["timepoints"], [1., 3., 4., 6.])
+    restored.censor[1] = 2
+    restored.censor[4] = np.nan
+    with pytest.raises(ValueError, match="stored survival status") as error:
+        restored.predict(x[:1])
+    assert "1=2.0, 4=nan" in str(error.value)
+    assert "Recode the original status data and refit" in str(error.value)
 
 
 def _dose_data():

@@ -1,0 +1,123 @@
+{
+  "provenance": {
+    "source_sha": "a9588d8dd73c39188d1c46f371763addb10bee9a",
+    "source_files_md5": {
+      "DESCRIPTION": "1927cb47ea56b722072ba04802591acb",
+      "NAMESPACE": "490d7ad61fb41940585a180e81247663",
+      "R/CP_SIR.R": "311d2dff5b35f3268b3755e958da4f68",
+      "R/RcppExports.R": "c4445d066b89da7bee10c6abe82f014d",
+      "R/dist_cross.R": "2e8e2157573ace69de2b92c29ee0c52f",
+      "R/distance.R": "910e2746d0141e7d5745550664788b7e",
+      "R/hMave.R": "aa09499942b39f7a671d1f3609a0fe14",
+      "R/kernel_weight.R": "f8bedd720c4eea3c25a4887d4eb49b75",
+      "R/orthoDr-package.R": "ae22d2bed0007fd53a95ba30f4d95954",
+      "R/orthoDr_pdose.R": "aff9f34a661bf1cea82a0d499f33df6e",
+      "R/orthoDr_reg.R": "b4fc402b9761631667ae0fd695cf75c7",
+      "R/orthoDr_surv.R": "0a2135e0f8c6c5b727c0187ee83f2365",
+      "R/ortho_optim.R": "a28637700516ab0e144ac2f8f8a6db2b",
+      "R/pSAVE.R": "4ce68f154edf50b08b9e12ea40214235",
+      "R/param_check.R": "b57afb8e7f78d5ced0ce75fab0449317",
+      "R/predict.R": "24d056270ba5ff6ffcfa5f8cc16173fc",
+      "R/print.R": "af5a8a7a7cbd564fd75ade7c6c6c4ab1",
+      "R/silverman.R": "40bd3b6cd2f592df82e8af826948533f",
+      "R/skcm.R": "b9bf9e59f89c5031f13027154f3faf55",
+      "R/view_dr_surv.R": "bdd38eb1862a2ab9a08a0a766d9f14eb",
+      "src/Makevars": "21e730f14e6fb33150cde4b9cb254344",
+      "src/Makevars.win": "21e730f14e6fb33150cde4b9cb254344",
+      "src/RcppExports.cpp": "40c59b9428171e861828b5c21ee7e0d5",
+      "src/gen_solver.cpp": "a84a5d79f715e42b1a92247017aeb411",
+      "src/orthoDr.h": "725b03bc4e2074491c11f440b34222c6",
+      "src/orthoDr_gen.h": "d39590636a2e3613d346c1a5cd3a12b8",
+      "src/orthoDr_pdose.h": "958be607e10ce1b0412dabad177dc8ca",
+      "src/orthoDr_reg.h": "dcd22ec5a6d33eb10583a3b03ee91273",
+      "src/orthoDr_surv.h": "bb5a04e64e045aff21d37ecfb19e9886",
+      "src/pdose_direct_solver.cpp": "5be1e83c122c99044dbab618d5b10f10",
+      "src/pdose_kernel_dose.cpp": "cde9c335f5479eddb67a7b9cb798681b",
+      "src/pdose_semi_solver.cpp": "9fa0bb2d52fe8fe4bd4e8b427d1a96ab",
+      "src/reg_local_solver.cpp": "0320fce05f56fb78e56fb558dc85f22d",
+      "src/reg_phd_solver.cpp": "050c1df59b58b1a851e9aa4750bc303f",
+      "src/reg_save_solver.cpp": "c2502e859d1aead872b12a4c7c146baa",
+      "src/reg_seff_solver.cpp": "fe00f1e15b9de57d490b81973e5fe8de",
+      "src/reg_sir_solver.cpp": "ad46a42517a941c846258ab75f1ffc6c",
+      "src/reg_solver_shared.cpp": "9fe5386392d5079c8719ccf6320554c7",
+      "src/solver_numerics.h": "61c233b968975a17390881c96622a2c3",
+      "src/surv_dm_solver.cpp": "bfbf473cf160aecc41099ec9f6b129ab",
+      "src/surv_dn_solver.cpp": "fa9d56bbed4f7db0f1fd83f24620466b",
+      "src/surv_forward_solver.cpp": "eacf4fa07dd1354d38d902a20e35ba9e",
+      "src/utilities.cpp": "00d3100553308ceeba89dd2abb57a11b",
+      "src/utilities.h": "b5b6f91877e8862d729c3f1300334807"
+    },
+    "source_hash_convention": "CRLF normalized to LF; all other bytes unchanged",
+    "source_fixture": "r_reference.json",
+    "oracle": "Pinned R wrapper fitted to centered X divided by its pooled sample SD; fn and predictors restored to supplied units",
+    "R_version": "R version 4.6.1 (2026-06-24 ucrt)",
+    "platform": "x86_64-w64-mingw32",
+    "packages": {
+      "orthoDr": "2.0.0",
+      "pkgload": "1.5.3",
+      "jsonlite": "2.0.0",
+      "Rcpp": "1.1.2",
+      "RcppArmadillo": "15.4.2.1",
+      "dr": "3.0.11",
+      "pracma": "2.4.6"
+    }
+  },
+  "regression": {
+    "sir_d1": {
+      "expected": {
+        "B": [
+          [0.42017786463073531],
+          [0.87434748291391373],
+          [0.24283130192884733]
+        ],
+        "fn": 0.0028767274641564458,
+        "itr": 7,
+        "converge": false,
+        "method": "sir",
+        "bw": 0.5172818579717865,
+        "keep.data": true
+      },
+      "prediction": {
+        "pred": [0.015229358608135377, 0.071965273218399725, -0.1118958004152979, -0.115750766118545]
+      }
+    },
+    "sir_d2": {
+      "expected": {
+        "B": [
+          [0.64051280227912266, 0.24410901129685819],
+          [0.46349959753600656, 0.63308148944015896],
+          [-0.61230014960026335, 0.73458737964376974]
+        ],
+        "fn": 0.00084184731827508495,
+        "itr": 7,
+        "converge": false,
+        "method": "sir",
+        "bw": 0.55032120814910446,
+        "keep.data": true
+      },
+      "prediction": {
+        "pred": [-0.17016904489410056, -0.082235167432713682, 0.050221080523188612, -0.20346463928209468]
+      }
+    }
+  },
+  "stationary_fits": {
+    "reg_sir": {
+      "expected": {
+        "B": [
+          [0.39632450773550898],
+          [0.89356416920212733],
+          [0.21087901765305833]
+        ],
+        "fn": 0.0027893480989115691,
+        "itr": 15,
+        "converge": true,
+        "method": "sir",
+        "bw": 0.5172818579717865,
+        "keep.data": true
+      },
+      "prediction": {
+        "pred": [0.027152537553302339, 0.085766423221553104, -0.12346948664175053, -0.12676032840982385]
+      }
+    }
+  }
+}

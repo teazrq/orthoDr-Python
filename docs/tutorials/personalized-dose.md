@@ -177,7 +177,9 @@ intercept. Both methods default to no intercept.
 | `K`, default `floor(sqrt(n))` | Number of grid doses for initialization | Number of grid doses for constructing final ridge targets |
 | `intercept_bounds` | Bounds the mean training recommendation when an intercept is enabled | Omit this argument |
 
-The grid spans the observed dose range. Both final rules give continuous
+The grid spans the observed dose range. In pseudo-direct learning, if several
+grid doses tie for the highest estimated reward to numerical precision, the
+lowest of those doses becomes the training target. Both final rules give continuous
 predictions and do not clip them to that range. Inspect support for proposed
 recommendations and assess penalties and bandwidths through evaluation suited
 to the data and study design. The nominal defaults are not a calibration study.

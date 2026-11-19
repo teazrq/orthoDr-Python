@@ -30,9 +30,10 @@ An R serialized fit cannot be loaded as a Python pickle.
 
 ## Understand the numerical comparison
 
-The port retains the pinned R source's native numerical routines. Python
-implements the surrounding preprocessing, initializers, prediction, plotting,
-and data access. Saved R fixtures test regression, survival, both dose methods,
+The port uses the native numerical routines from a pinned R source revision
+and incorporates updates through 2.1.0. Python implements the surrounding
+preprocessing, initializers, prediction, plotting, and data access. Saved R
+fixtures test regression, survival, both dose methods,
 initializers, the optimizer, and prediction using recorded inputs and fitted
 states. Fixed-state objective, derivative, and prediction checks separate
 formula agreement from an optimizer's trajectory.
@@ -40,9 +41,10 @@ formula agreement from an optimizer's trajectory.
 Nonconvex updates can amplify floating-point differences. A tightly matching
 early trajectory need not give identical later unfinished iterates, and a
 finite-difference solver can be sensitive to very small changes in its
-starting basis. Tied grid scores or GCV scores can also select different
-discrete winners across numerical libraries. These observations do not
-establish uniform numerical agreement or statistical equivalence.
+starting basis. For a pseudo-direct fit, both packages select the lowest grid
+dose among those tied for the highest estimated reward to numerical precision.
+Differences in fitted directions can still change the estimated rewards, and
+nearly equal GCV scores can lead to different choices of ridge penalty.
 
 Compare objective definitions, preprocessing, starting state, and stopping
 diagnostics before comparing raw direction coefficients. Direction signs
@@ -53,12 +55,16 @@ agreement, and statistical performance are different checks.
 
 | Evidence | Location |
 | --- | --- |
-| Pinned numerical source | [R source revision](https://github.com/teazrq/orthoDr/commit/a9588d8dd73c39188d1c46f371763addb10bee9a) |
+| Numerical source used by the Python extension | [R source revision](https://github.com/teazrq/orthoDr/commit/a9588d8dd73c39188d1c46f371763addb10bee9a), [updated R and Python source fingerprints](https://github.com/teazrq/orthoDr-Python/blob/main/tools/r_native_source_overlay.json) |
 | Test scope, observed errors, and build environment | [Validation report](https://github.com/teazrq/orthoDr-Python/blob/main/VALIDATION.md) |
 | Reference-source setup and fixture regeneration | [Fixture guide](https://github.com/teazrq/orthoDr-Python/blob/main/tests/fixtures/README.md) |
 | Installed-package Linux checks | [CI workflow and completed runs](https://github.com/teazrq/orthoDr-Python/actions/workflows/ci.yml) |
 
-The development revision includes coordinated pseudo-direct and pSAVE
+Both packages now use the left singular vectors for CP-SIR. Earlier versions
+used the right singular vectors, so refitting a survival model with the
+automatic start can give a different fitted subspace.
+
+Version 2.1.0 includes coordinated pseudo-direct and pSAVE
 corrections. Pseudo-direct convergence requires a small normalized constrained
 gradient; its returned `fn` remains raw reward RMSE. pSAVE pools group SAVE
 information in common coordinates and returns directions in the supplied

@@ -38,13 +38,13 @@ not values calibrated for a new application.
 
 ## Source version and compatibility
 
-These guides describe the GitHub source version **0.1.0**, which has not been
-released on PyPI. The source build requires a C++17 compiler, Armadillo, BLAS,
-and LAPACK. See [installation](tutorials/get-started.md#install-from-source)
-for shared Python dependencies and Windows/Linux build prerequisites.
+These guides describe version **2.1.0**. The source build requires a C++17
+compiler, Armadillo, BLAS, and LAPACK. See
+[installation](tutorials/get-started.md#install-from-source) for shared Python
+dependencies and Windows/Linux build prerequisites.
 
-The Python implementation retains the pinned R source's native numerical
-routines and implements preprocessing, initializers, and prediction in Python.
+The package uses the R package's C++ numerical routines and implements
+preprocessing, initializers, and prediction in Python.
 The [Python and R comparison](reference/r-python.md) explains what was checked,
 where numerical trajectories can differ, and how the interfaces correspond.
 It does not claim uniform numerical agreement across all data and platforms.

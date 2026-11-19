@@ -7,7 +7,7 @@ from ._utils import silverman, distance, dist_cross, kernel_weight
 from .plotting import view_dr_surv
 from .datasets import load_skcm
 
-__version__ = "0.1.0"
+__version__ = "2.1.0"
 
 __all__ = [
     "FitResult", "orthoDr_reg", "orthoDr_surv", "orthoDr_pdose", "predict",

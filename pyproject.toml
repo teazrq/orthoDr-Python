@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orthodr"
-version = "0.1.0"
+version = "2.1.0"
 description = "Semiparametric dimension reduction with orthogonality constrained optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,7 @@ plot = ["matplotlib>=3.6"]
 
 [project.urls]
 Documentation = "https://teazrq.github.io/orthoDr-Python/"
+"R documentation" = "https://teazrq.github.io/orthoDr/"
 Source = "https://github.com/teazrq/orthoDr-Python"
 Issues = "https://github.com/teazrq/orthoDr-Python/issues"
 

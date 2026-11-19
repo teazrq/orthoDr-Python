@@ -25,18 +25,51 @@ def test_source_pin_generated_manifest_fixtures_and_extension_agree():
     from orthodr import _core
 
     pin = json.loads(VENDOR.SOURCE_MANIFEST.read_text())
+    overlay = json.loads(VENDOR.NATIVE_OVERLAY.read_text())
     generated = json.loads((ROOT / "src/cpp/provenance.json").read_text())
-    assert pin["source_sha"] == VENDOR.SOURCE_REVISION == generated["revision"] == _core.source_revision
+    assert pin["source_sha"] == VENDOR.SOURCE_REVISION == generated["base_revision"]
+    assert _core.source_base_revision == overlay["base_revision"] == generated["base_revision"]
+    assert set(generated["source_overlay"]) == set(overlay["files"])
+    fingerprint = hashlib.sha256(json.dumps(overlay["files"], sort_keys=True).encode()).hexdigest()
+    assert generated["revision"] == _core.source_revision == pin["source_sha"] + "+native." + fingerprint
     assert pin["source_hash_convention"] == generated["source_hash_convention"] == (
         "CRLF normalized to LF; all other bytes unchanged")
     assert set(pin["source_files_md5"]) == set(pin["source_files_sha256"])
     for name, hashes in generated["files"].items():
-        assert hashes["source_sha256"] == pin["source_files_sha256"]["src/" + name]
-    for name in ("r_reference.json", "r_extended.json", "r_pseudo.json"):
+        baseline = pin["source_files_sha256"].get("src/" + name)
+        if name in overlay["files"]:
+            assert hashes == overlay["files"][name]
+            assert hashes["source_sha256"] != baseline
+        else:
+            assert hashes["source_sha256"] == baseline
+    for name in ("r_reference.json", "r_extended.json", "r_pseudo.json",
+                 "r_seff_centered.json", "r_sir_scaled.json"):
         provenance = json.loads((ROOT / "tests/fixtures" / name).read_text())["provenance"]
         assert provenance["source_sha"] == pin["source_sha"], name
         assert provenance["source_files_md5"] == pin["source_files_md5"], name
         assert provenance["source_hash_convention"] == pin["source_hash_convention"], name
+
+
+def test_pseudo_grid_fixture_identifies_its_r_solver():
+    generated = json.loads((ROOT / "src/cpp/provenance.json").read_text())
+    provenance = json.loads((ROOT / "tests/fixtures/r_pseudo_grid_ties.json").read_text())["provenance"]
+    assert provenance["source_fixture"] == "r_pseudo.json"
+    assert provenance["base_source_sha"] == generated["base_revision"]
+    assert provenance["source_hash_convention"] == generated["source_hash_convention"]
+    assert provenance["pseudo_solver_sha256"] == generated["files"]["pdose_semi_solver.cpp"]["source_sha256"]
+
+
+def test_cp_sir_fixture_fingerprints_isolate_the_r_initializer_change():
+    pin = json.loads(VENDOR.SOURCE_MANIFEST.read_text())
+    provenance = json.loads((ROOT / "tests/fixtures/r_cp_sir_left.json").read_text())["provenance"]
+    assert provenance["base_source_sha"] == pin["source_sha"]
+    assert provenance["source_hash_convention"] == pin["source_hash_convention"]
+    assert provenance["source_fixture"] == "r_reference.json"
+    expected = pin["source_files_md5"]
+    actual = provenance["source_files_md5"]
+    assert set(actual) == set(expected)
+    assert provenance["source_overlay"] == "R/CP_SIR.R"
+    assert {name for name in actual if actual[name] != expected[name]} == {"R/CP_SIR.R"}
 
 
 def test_regeneration_rejects_changed_or_added_source(tmp_path):

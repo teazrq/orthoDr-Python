@@ -1,7 +1,7 @@
 # Python API
 
 Look up array conventions, fitting arguments, returned diagnostics, and
-numerical utilities for the GitHub source version **0.1.0**. For a first
+numerical utilities for version **2.1.0**. For a first
 analysis, start with [installation and regression](tutorials/get-started.md),
 [survival](tutorials/survival.md), or
 [personalized doses](tutorials/personalized-dose.md).
@@ -10,10 +10,11 @@ analysis, start with [installation and regression](tutorials/get-started.md),
 
 Use finite real NumPy-compatible arrays. Predictors have shape `(n, p)`;
 responses, doses, rewards, and event indicators have shape `(n,)`.
-Categorical encoding and missing-data handling are the caller's responsibility.
+Resolve missing entries before fitting or prediction. NumPy masked entries
+raise an error that identifies their zero-based positions.
 Apply any external preprocessing using training data only and reuse it for
-new observations. Regression and dose fitting use predictors on their supplied
-scale; survival fitting standardizes them internally.
+new observations. Regression uses one pooled predictor scale for optimization.
+Survival fitting standardizes predictors internally.
 
 The three model functions return `FitResult`, a dictionary with attribute
 access and `transform`/`predict` methods. `B` is a `(p, ndr)` direction matrix,
@@ -82,11 +83,44 @@ the corresponding semiparametric estimating-equation objectives; they are not
 simply the sliced initializers. `local` uses local conditional-mean estimation,
 and `seff` uses the efficient estimating equation.
 
-The response must vary. Automatic initialization uses SIR/SAVE/residual-PHD
+SIR, PHD, LOCAL, and SEFF center the training predictors and divide them by
+one pooled sample standard deviation, the root mean square of the column
+sample standard deviations. PHD uses outer products of the centered
+predictors. SAVE retains its supplied-unit estimating equation and divides its
+squared norm by `max(s**4, s**8)`, where `s` is the pooled predictor scale.
+Changing all predictor units can still affect SAVE because its equation contains
+the identity minus a conditional covariance matrix. Scaling individual features
+can affect any fitted direction.
+
+Stopping tolerances and optimizer output use the internal scaled objective.
+The returned objective value, `fn`, uses the supplied predictor units. At extreme
+predictor scales it can round to zero or overflow even when the fit converges.
+With a very narrow kernel, a finite-difference step can move a projected
+observation by several bandwidths. If using such a bandwidth with SIR or SAVE,
+check whether a smaller `control["epsilon"]` changes the fitted directions
+or held-out predictions.
+
+Centering gives SEFF's changing and fixed reference projections a common
+origin. The common scale preserves the interpretation of `B_initial` for
+all methods. Retained training data use the supplied coordinates,
+so pass new data in those same coordinates to `predict` and `transform`.
+Column shifts leave the centered fitting problem unchanged in exact arithmetic;
+finite-difference optimizer trajectories can still amplify numerical rounding.
+This correction can change SEFF fits from earlier package versions.
+
+At least two observations and a varying response are required. With one
+predictor, it must also vary. If `B_initial` is omitted, this scalar case uses
+`[[1]]` for every method, including LOCAL. It still runs the usual preprocessing,
+objective, solver, and prediction code. The feasible scalar bases are `-1` and
+`+1`, so convergence with zero optimizer iterations is expected; `fn` remains
+specific to the chosen method. Supplied starts retain their orientation after
+orthonormalization, and `ndr` is capped at the number of predictors as usual.
+
+With multiple predictors, automatic initialization uses SIR/SAVE/residual-PHD
 from the translated `dr` routines. It also considers the leading SIR and SAVE
 directions jointly for `ndr=2`. One-direction LOCAL fits three starts and
 chooses by training kernel R-squared. Other configurations select the initial
-basis with the smallest starting objective. Automatic initialization requires
+basis with the smallest starting objective. These sliced initializers require
 full centered predictor rank and at least two observations in each SAVE
 response slice. All three candidates are computed even when the fitted method
 is not SAVE, so small samples can fail this initialization requirement.
@@ -101,8 +135,15 @@ orthoDr_surv(x, y, censor, method="dm", ndr=None, B_initial=None,
              verbose=0, ncore=1)
 ```
 
-`censor` contains 1 for an event and 0 for right censoring. At least one event
-and positive predictor variances are required. `forward` uses one direction;
+Supply one finite follow-up time for every subject, including censored
+subjects. Masked or missing times must be resolved before fitting.
+`censor` contains 1 for an observed event and 0 for right censoring. Boolean
+indicators are also accepted. Survival fitting, `CP_SIR`, and `view_dr_surv`
+reject other values, including `NaN`, and report examples with zero-based row
+indices. Both functions require at least one event and varying predictors.
+`CP_SIR` and automatic survival starts require linearly independent centered
+columns. With a supplied start, its projected predictors must vary independently.
+`forward` uses one direction.
 `dn` and `dm` default to two. Automatic initialization uses counting-process
 SIR. A supplied `B_initial` is expressed in the internally standardized
 predictor coordinates, matching R. The returned `B` is on the original scale.
@@ -110,6 +151,10 @@ predictor coordinates, matching R. The returned `B` is on the original scale.
 Prediction returns a matrix of shape `(number_of_training_events, n_new)`.
 Rows correspond to sorted observed event times, with repeats retained. Each
 column is a kernel-weighted Kaplan-Meier curve, using complete tied risk sets.
+Weights are compared within each risk set, including late in follow-up.
+If everyone remaining fails together, the curve reaches zero. Prediction
+also checks the retained times and event indicators. Correct invalid values
+in the original training data and refit.
 The returned basis columns have unit length but need not be orthogonal after
 conversion to the original scale.
 
@@ -135,8 +180,13 @@ columns can be rejected as numerically rank deficient.
 `K` is the number of candidate doses
 on a grid spanning the observed range, default `floor(sqrt(n))`. Fractional
 values are floored; `K=1` uses the minimum dose. Direct learning uses the grid
-only during initialization. Pseudo-direct learning uses it to select targets
-for the final ridge dose rule. Predictions from both methods are continuous.
+only during initialization. Pseudo-direct learning uses it to select a training
+target for each observation. For a grid dose $j$, the algorithm computes the
+estimated standardized reward $s_j$ and a numerical tolerance $r_j=4\epsilon M_j$,
+where $\epsilon=2^{-52}$ and $M_j$ is the local weighted mean of the absolute
+standardized rewards. It selects the lowest dose satisfying
+$s_j+r_j\geq\max_k(s_k-r_k)$ as the target for the final ridge fit. Both methods
+predict continuous doses.
 
 Interpreting the rule causally requires consistency (the observed reward equals
 the potential reward at the observed dose), no unmeasured dose-outcome
@@ -238,12 +288,17 @@ See the runnable [pseudo-direct example](https://github.com/teazrq/orthoDr-Pytho
 
 | Function | Result |
 | --- | --- |
-| `pSAVE(x, a, r, ndr=2, nslices0=2)` | `(p, ndr)` partial-SAVE basis |
-| `CP_SIR(x, y, censor, bw=None)` | Dictionary of singular `values` and normalized direction `vectors` |
-| `hMave(x, y, censor, m0, B0=None)` | Dictionary with `(p, m0)` basis `B` and the source hMAVE leave-one-out kernel score `cv` |
+| `pSAVE(x, a, r, ndr=2, nslices0=2)` | `(p, ndr)` partial-SAVE basis. [Feng et al. (2013)](references.md#partial-save) |
+| `CP_SIR(x, y, censor, bw=None)` | Dictionary of singular `values` and direction `vectors`, ordered by decreasing singular value. [Sun et al. (2019)](references.md#survival) |
+| `hMave(x, y, censor, m0, B0=None)` | Dictionary with `(p, m0)` basis `B` and the hMAVE leave-one-out kernel score `cv`. [Xia, Zhang and Xu (2010)](references.md#hazard-mave) |
 | `ortho_optim(B, fn, grad=None, *args, maximize=False, control=None, maxitr=500, verbose=0, **kwargs)` | Dictionary with `B`, `fn`, `fn_Seq`, `itr`, `converge`, and gradient `method` |
 
-`pSAVE` now combines group SAVE information in common coordinates and returns
+`CP_SIR` takes the left singular vectors of the moment matrix computed from
+whitened predictors. It maps them back to the supplied predictor coordinates
+and returns them as unit-length columns of `vectors`.
+
+`pSAVE` combines group SAVE information in common coordinates, using one scale
+per predictor to improve whitening when their units differ greatly. It returns
 unit-norm directions in the original predictor units. These columns need not
 be orthogonal; dose wrappers orthonormalize the starting basis in column order.
 Tiny outcome slices add no directional information. Automatic starts for both
@@ -254,13 +309,18 @@ give different bases across numerical libraries.
 The finite-sample dose kernel uses the individual projected coordinates, so
 rotating a basis or rescaling predictors can change the fitted rule. Apply
 any chosen predictor preprocessing consistently to training and new data.
+Fitting and prediction use the same origin for each predictor. Subtracting
+a large common offset before projection helps preserve small differences
+between patients.
 
 `ortho_optim` minimizes a scalar Python objective under `B.T @ B == I`.
 Set `maximize=True` to maximize it. The optional analytic gradient must have
 the same shape as `B`. Additional positional and keyword arguments pass to
-both callbacks. Without `grad`, the solver uses forward differences.
-`fn_Seq[:itr]` contains completed iterations; the remaining allocated entries
-are zero. Inputs and callback results must be finite.
+both callbacks. Without `grad`, the solver uses central differences.
+`fn_Seq[:itr]` contains objectives from accepted updates, followed by zeros
+in the remaining allocated entries. Convergence requires a projected
+gradient norm at most `gtol`. A failed line search returns the last accepted
+state with `converge=False`. Inputs and callback results must be finite.
 
 The hMAVE `cv` score uses squared prediction errors for Gaussian event-time
 kernel values among observed events. It is not a calibrated survival-probability
@@ -269,22 +329,57 @@ or hazard prediction loss.
 `silverman(d, n)` gives the bandwidth above. `dist_cross(x1, x2)` and
 `kernel_weight(x1, x2)` return `exp(-squared_distance)` between rows. The
 compatibility `kernel` and `dist` arguments of `kernel_weight` are unused,
-matching R. `distance(s1, s2, type="dist", x=None)` compares subspaces:
-`dist` is projector Frobenius distance, `trace` and `canonical` are
-similarities, and `sine` retains R's square root of the sum of fourth powers
-of principal-angle sines. `canonical` requires predictor data `x`.
+matching R.
+
+`distance(s1, s2, type="dist", x=None)` compares subspaces. The default `dist`
+is the Frobenius distance between the projection matrices. `trace` and
+`canonical` are similarities. `canonical` requires predictor data `x`.
+
+For subspaces of dimensions $d_1$ and $d_2$ with principal angles $\theta_i$,
+`type="sine"` returns
+
+$$
+\sqrt{\sum_{i=1}^{\min(d_1,d_2)} \sin^4(\theta_i) + \max(d_1-d_2,0)}.
+$$
+
+For equal dimensions, this is the square root of the sum of fourth powers of
+the sines. For unequal dimensions, the result depends on argument order. A
+line in a plane gives 0 with the line first and 1 with the plane first.
+The sine discrepancy can violate the triangle inequality even at equal
+dimensions. Use `type="dist"` for a metric.
 
 ## Plotting and example data
 
-`view_dr_surv(x, y, censor, B, type="2D", FUN="log", ..., ax=None)` plots
-observed times against one reduced direction. Events and censored observations
-use distinct markers. `type="3D"` displays a kernel-weighted Kaplan-Meier
+```text
+view_dr_surv(x, y, censor, B=None, bw=None, FUN="log", type="2D",
+             legend_add=True, xlab="Reduced Direction", ylab="Time",
+             zlab="Survival", *, ax=None)
+```
+
+`view_dr_surv` plots observed times against one reduced direction. Events and
+censored observations use distinct markers, and all-censored data are accepted.
+`type="3D"` displays a kernel-weighted Kaplan-Meier
 surface. `B` must be a vector or a one-column matrix. The surface bandwidth is
 on the projected coordinate scale, defaulting to
-`silverman(1, n) * std(x @ B, ddof=1)`.
+`silverman(1, n) * std(x @ B, ddof=1)`. Pass `type="3D"` by keyword; the
+fifth positional argument is `bw`.
 
-The default logarithm requires positive times. Use `FUN="identity"` for
-untransformed time, or supply an order-preserving transformation. `xlab`,
+The surface uses 100 equally spaced reduced-direction values. Its time knots
+are the pooled observed follow-up's 0th through 100th empirical percentiles,
+plus every observed event time, with duplicates removed. Percentile `k` selects
+sorted observation `max(1, ceil(k*n/100))`, using one-based ranks (R's type 1
+quantiles). Knots always lie at observed follow-up values, include the minimum
+and maximum follow-up, and appear on the transformed time scale. With one
+distinct transformed knot, the weighted survival profile is drawn as a 3D line.
+Risk sets use original follow-up times. When knots share a display coordinate,
+it shows survival at the latest of those follow-up times.
+
+The default logarithm requires positive times. `FUN` accepts `"log"`,
+`"log10"`, `"log2"`, `"sqrt"`, `"identity"`, `None` (identity), or a callable.
+Use `FUN="identity"` for untransformed time, or supply an order-preserving
+transformation. A callable receives the full observed-time vector once.
+Changing time units or applying a strictly increasing transformation preserves
+the selected observations and survival heights. `xlab`,
 `ylab`, and `zlab` set axis labels; use an appropriate `ylab` when transforming
 time. `legend_add=False` hides the 2D legend. The function lazily imports
 Matplotlib, returns the axes, and never opens a display. Save with
@@ -315,7 +410,11 @@ R package:
   [Annals of Statistics](https://doi.org/10.1214/12-AOS1072).
 - Sun, Zhu, Wang, and Zeng (2019), counting process methods for censored outcomes,
   [Biometrika](https://doi.org/10.1093/biomet/asy064).
+- Xia, Zhang, and Xu (2010), hazard MAVE for censored survival times,
+  [JASA](https://doi.org/10.1198/jasa.2009.tm09372).
 - Zhou, Zhu, and Zeng (2021), personalized dose finding,
   [Biometrika](https://doi.org/10.1093/biomet/asaa087).
+- Feng, Wen, Yu, and Zhu (2013), partial sufficient dimension reduction,
+  [JASA](https://doi.org/10.1080/01621459.2012.746065).
 - Wen and Yin (2013), feasible optimization with orthogonality constraints,
   [Mathematical Programming](https://doi.org/10.1007/s10107-012-0584-1).
